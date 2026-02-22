@@ -1,0 +1,30 @@
+name: research_digest
+mode: prod
+steps:
+  - id: fetch_arxiv
+    kind: tool
+    ref: agents.research_digest.tools.arxiv:fetch
+    outputs: ["arxiv_docs"]
+
+  - id: fetch_rss
+    kind: tool
+    ref: agents.research_digest.tools.rss:fetch
+    outputs: ["rss_docs"]
+
+  - id: normalize
+    kind: tool
+    ref: agents.research_digest.tools.normalize:run
+    inputs: ["arxiv_docs", "rss_docs"]
+    outputs: ["docs_norm"]
+
+  - id: dedupe_rank
+    kind: tool
+    ref: agents.research_digest.tools.dedupe_rank:run
+    inputs: ["docs_norm"]
+    outputs: ["docs_ranked"]
+
+  - id: render
+    kind: tool
+    ref: agents.research_digest.tools.render:run
+    inputs: ["docs_ranked"]
+    outputs: ["digest_md", "digest_json"]
