@@ -66,25 +66,25 @@ Build a public, professional research digest agent on top of a minimal orchestra
     - Duplicate step IDs rejected
     - Defaults handled correctly
 
-- 1.3 Pydantic models: StepResult and Manifest
-  - Define StepResult:
-    - step_id: str
-    - status: StepStatus
-    - started_at: datetime
-    - ended_at: datetime
-    - metrics: dict[str, float|int|str] = {}
-    - outputs: list[ArtifactRef] = []
-  - Define Manifest:
-    - run_id: str
-    - artifacts: list[ArtifactRef] = []
-    - steps: list[StepResult] = []
-  - Add helper methods:
-    - get_artifact(name)
-    - require_artifact(name)
-  - Add unit tests:
-    - Artifact lookup works
-    - require_artifact raises on missing
-    - StepResult fields validate
+- [X] 1.3 Pydantic models: StepResult and Manifest
+   - [X]    - Define StepResult:
+   - [X]      - step_id: str
+   - [X]      - status: StepStatus
+   - [X]      - started_at: datetime
+   - [X]      - ended_at: datetime
+   - [X]      - metrics: dict[str, float|int|str] = {}
+   - [X]      - outputs: list[ArtifactRef] = []
+   - [X]    - Define Manifest:
+   - [X]      - run_id: str
+   - [X]      - artifacts: list[ArtifactRef] = []
+   - [X]      - steps: list[StepResult] = []
+   - [X]    - Add helper methods:
+   - [X]      - get_artifact(name)
+   - [X]      - require_artifact(name)
+   - [X]    - Add unit tests:
+   - [X]      - Artifact lookup works
+   - [X]      - require_artifact raises on missing
+   - [X]      - StepResult fields validate
 
 - 1.4 JSON schema stubs in schemas/
   - Create minimal placeholder schemas:
