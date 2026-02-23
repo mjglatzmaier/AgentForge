@@ -48,23 +48,23 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]      - Missing required fields rejected
    - [X]      - Datetime handling validated
 
-- 1.2 Pydantic models: StepSpec and PipelineSpec
-  - Define StepSpec:
-    - id: str
-    - kind: StepKind
-    - ref: str
-    - inputs: list[str] = []
-    - outputs: list[str] = []
-    - config: dict[str, Any] = {}
-  - Define PipelineSpec:
-    - name: str
-    - steps: list[StepSpec]
-  - Add validation:
-    - Unique step IDs
-    - Non-empty step IDs
-  - Add unit tests:
-    - Duplicate step IDs rejected
-    - Defaults handled correctly
+- [X] 1.2 Pydantic models: StepSpec and PipelineSpec
+   - [X]    - Define StepSpec:
+   - [X]      - id: str
+   - [X]      - kind: StepKind
+   - [X]      - ref: str
+   - [X]      - inputs: list[str] = []
+   - [X]      - outputs: list[str] = []
+   - [X]      - config: dict[str, Any] = {}
+   - [X]    - Define PipelineSpec:
+   - [X]      - name: str
+   - [X]      - steps: list[StepSpec]
+   - [X]    - Add validation:
+   - [X]      - Unique step IDs
+   - [X]      - Non-empty step IDs
+   - [X]    - Add unit tests:
+   - [X]      - Duplicate step IDs rejected
+   - [X]      - Defaults handled correctly
 
 - 1.3 Pydantic models: StepResult and Manifest
   - Define StepResult:
