@@ -1,4 +1,5 @@
 # AgentForge
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A lightweight, privacy-first agent orchestration framework for research digestion, evaluation, and autonomous knowledge workflows.
 
