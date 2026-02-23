@@ -96,19 +96,19 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]    - Pydantic models remain source of truth.
    - [X]    - No behavioral tests required (optional existence test).
 
-- 1.5 Hashing utilities
-  - Implement in agentforge/storage/hashing.py:
-    - sha256_file(path)
-    - sha256_str(s)
-    - stable_json_dumps(obj) (sorted keys, deterministic)
-    - sha256_json(obj)
-  - Ensure stable hashing for:
-    - dicts with different key order
-    - Pydantic models (via model_dump)
-  - Add unit tests:
-    - Stable hash equality for permuted dict keys
-    - Known file hash test
-    - Model hash consistency
+- [X] 1.5 Hashing utilities
+   - [X]    - Implement in agentforge/storage/hashing.py:
+   - [X]      - sha256_file(path)
+   - [X]      - sha256_str(s)
+   - [X]      - stable_json_dumps(obj) (sorted keys, deterministic)
+   - [X]      - sha256_json(obj)
+   - [X]    - Ensure stable hashing for:
+   - [X]      - dicts with different key order
+   - [X]      - Pydantic models (via model_dump)
+   - [X]    - Add unit tests:
+   - [X]      - Stable hash equality for permuted dict keys
+   - [X]      - Known file hash test
+   - [X]      - Model hash consistency
 
 - 1.6 Run folder layout
   - Implement in agentforge/storage/run_layout.py:
