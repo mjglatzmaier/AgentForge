@@ -1,6 +1,7 @@
 from enum import Enum
+from typing import Any
 
-from pydantic import AwareDatetime, BaseModel
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 
 class Mode(str, Enum):
@@ -40,3 +41,31 @@ class ArtifactRef(BaseModel):
     path: str
     sha256: str
     producer_step_id: str
+
+
+class StepSpec(BaseModel):
+    id: str
+    kind: StepKind
+    ref: str
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("id")
+    @classmethod
+    def validate_non_empty_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Step id must be non-empty")
+        return value
+
+
+class PipelineSpec(BaseModel):
+    name: str
+    steps: list[StepSpec]
+
+    @model_validator(mode="after")
+    def validate_unique_step_ids(self) -> "PipelineSpec":
+        step_ids = [step.id for step in self.steps]
+        if len(step_ids) != len(set(step_ids)):
+            raise ValueError("Step IDs must be unique")
+        return self
