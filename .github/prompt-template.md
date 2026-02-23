@@ -12,6 +12,7 @@ Constraints (must follow):
 - Agents communicate ONLY via manifest-indexed artifacts (no hardcoded filesystem coupling).
 - No global state.
 - All changes must include unit tests (pytest). If a change is trivial, add at least one regression test.
+- Prefer simple, professional and clean code when possible
 
 Implementation rules:
 1) Before coding, briefly list the files you will modify/create (max 10 lines).

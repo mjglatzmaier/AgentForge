@@ -20,33 +20,33 @@ Build a public, professional research digest agent on top of a minimal orchestra
  - 0.3 .github/instructions.md (plain text)
 
 ## Phase 1: Define contracts and schemas (no LLM calls yet)
-- 1.0 Core enums and primitives
-  - Add enums in agentforge/contracts/models.py:
-    - Mode (prod | debug | eval)
-    - StepKind (tool | agent)
-    - StepStatus (success | failed | skipped)
-  - Add minimal shared type aliases if needed.
-  - Add unit tests under agentforge/tests/:
-    - Validate enum parsing and serialization.
-    - Ensure invalid values raise validation errors.
+- [X] 1.0 Core enums and primitives
+   - [X]    - Add enums in agentforge/contracts/models.py:
+   - [X]      - Mode (prod | debug | eval)
+   - [X]      - StepKind (tool | agent)
+   - [X]      - StepStatus (success | failed | skipped)
+   - [X]    - Add minimal shared type aliases if needed.
+   - [X]    - Add unit tests under agentforge/tests/:
+   - [X]      - Validate enum parsing and serialization.
+   - [X]      - Ensure invalid values raise validation errors.
 
-- 1.1 Pydantic models: RunConfig and ArtifactRef
-  - Define RunConfig:
-    - run_id: str
-    - timestamp: datetime (timezone-aware)
-    - mode: Mode
-    - pipeline_name: str
-    - git_sha: Optional[str]
-  - Define ArtifactRef:
-    - name: str
-    - type: str
-    - path: str
-    - sha256: str
-    - producer_step_id: str
-  - Add unit tests:
-    - Valid construction
-    - Missing required fields rejected
-    - Datetime handling validated
+- [X] 1.1 Pydantic models: RunConfig and ArtifactRef
+   - [X]    - Define RunConfig:
+   - [X]      - run_id: str
+   - [X]      - timestamp: datetime (timezone-aware)
+   - [X]      - mode: Mode
+   - [X]      - pipeline_name: str
+   - [X]      - git_sha: Optional[str]
+   - [X]    - Define ArtifactRef:
+   - [X]      - name: str
+   - [X]      - type: str
+   - [X]      - path: str
+   - [X]      - sha256: str
+   - [X]      - producer_step_id: str
+   - [X]    - Add unit tests:
+   - [X]      - Valid construction
+   - [X]      - Missing required fields rejected
+   - [X]      - Datetime handling validated
 
 - 1.2 Pydantic models: StepSpec and PipelineSpec
   - Define StepSpec:
