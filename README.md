@@ -2,123 +2,125 @@
 
 A lightweight, privacy-first agent orchestration framework for research digestion, evaluation, and autonomous knowledge workflows.
 
-# Overview
+## Overview
 
 AgentForge is a minimal but professional agent platform designed to support:
 
- - YAML-defined pipeline orchestration
- - Modular, provider-agnostic agents
- - Structured artifact storage with run manifests
- - Local-first execution with optional frontier model integration
- - Built-in evaluation backends
- - Reproducible research workflows
+- YAML-defined pipeline orchestration
+- Modular, provider-agnostic agents
+- Structured artifact storage with run manifests
+- Local-first execution with optional frontier model integration
+- Built-in evaluation backends
+- Reproducible research workflows
 
 The initial reference implementation includes a Research Digest Agent that:
 
- - Fetches arXiv and RSS sources
- - Normalizes and deduplicates documents
- - Ranks relevance
- - Synthesizes structured digests
- - Stores artifacts with full traceability
- - Supports evaluation and regression comparison
+- Fetches arXiv and RSS sources
+- Normalizes and deduplicates documents
+- Ranks relevance
+- Synthesizes structured digests
+- Stores artifacts with full traceability
+- Supports evaluation and regression comparison
 
-This project emphasizes reproducibility, and extensibility over heavy abstraction.
+## Design Principles
 
-# Design Principles
+1. Minimal orchestration core (ordered steps only in MVP)
+2. Explicit artifact contracts via run manifests
+3. Agent isolation with clear tool allowlists
+4. Structured outputs via typed schemas
+5. Provider-agnostic LLM integration
+6. Evaluation as a first-class subsystem
 
- - Minimal orchestration core (ordered steps, no premature DAG complexity)
- - Explicit artifact contracts via run manifests
- - Agent isolation with clear tool allowlists
- - Structured outputs via typed schemas
- - Provider-agnostic LLM integration
- - Separation between platform (public) and agent implementations (private-capable)
- - Evaluation as a first-class subsystem
+------------------------------------------------------------------
 
-# Architecture
+## Build and Development Setup
 
-AgentForge is organized into four layers:
+Requirements
 
- - Orchestration
- - YAML-defined pipelines
- - Sequential step execution
- - Step-level caching
- - Run ID–scoped artifact directories
- - Manifest tracking
+- Python 3.11+
+- Git
+- Virtual environment recommended
 
-# Agents
-Each agent lives in:
+Initial Setup
 
+1. Create and activate a virtual environment:
+```bash
+   python -m venv .venv
+   source .venv/bin/activate   (macOS/Linux)
+   .venv\Scripts\activate      (Windows)
 ```
-agents/<agent_name>/
-agent.yaml
-prompts/
-tools/
-src/
+2. Install dependencies:
+```bash
+   pip install -e .[dev]
 ```
-
-Agents may run:
-
- - In-process (Python)
- - As subprocesses
- - As containers (future support)
-
-# Artifact System
-Each pipeline run generates:
+3. Verify installation:
+```bash
+   python -m pytest
 ```
-runs/<run_id>/
-manifest.json
-steps/
-logs/
+------------------------------------------------------------------
+
+## Running a Pipeline (coming in Phase 2)
+
+Planned command:
+```bash
+   python -m agentforge run pipelines/research_digest.yaml
 ```
-Artifacts are indexed and accessed via the manifest rather than direct filesystem coupling.
+This will:
 
-# Evaluation
-The evaluation subsystem provides:
+- Generate a new run_id
+- Create a runs/<run_id>/ directory
+- Execute ordered steps
+- Produce structured artifacts
+- Write a manifest.json
 
- - Structured metrics
- - RAG quality scoring
- - Regression comparison across runs
- - LLM-as-judge rubric scoring (optional)
+------------------------------------------------------------------
 
-Example: Research Digest Pipeline
+## Running Evaluation (coming in Phase 5)
+
+Planned command:
 ```
-fetch_arxiv -> fetch_rss -> dedupe_rank -> synthesize -> render
+   python -m eval.core.runner --run_id <run_id>
 ```
-Output:
+This will:
 
- - Structured JSON digest
- - Markdown report
- - Full artifact trace
- - Optional evaluation report
+- Load run manifest
+- Compute metrics
+- Write eval results under runs/<run_id>/eval/
 
-# Why AgentForge?
+------------------------------------------------------------------
 
-Modern LLM workflows require more than a single prompt.
+## Project Structure
+```
+agentforge/
+  contracts/      Core Pydantic models
+  orchestrator/   Pipeline execution logic
+  storage/        Manifest and artifact indexing
+  providers/      LLM provider abstraction
+  utils/          Shared utilities
 
-AgentForge provides:
+agents/
+  research_digest/
+    prompts/
+    tools/
+    src/
 
- - Deterministic pipeline execution
- - Artifact reproducibility
- - Multi-agent extensibility (agent swarms)
- - Clear separation of concerns
- - Evaluation-ready infrastructure
+pipelines/
+  research_digest.yaml
 
-It is intentionally lightweight and does not depend on heavy agent frameworks.
+eval/
+  metrics/
+  core/
 
-# Roadmap
+runs/
+  (generated artifacts)
+```
+------------------------------------------------------------------
 
- - DAG execution support
- - Containerized agent runtime
- - Advanced evaluation backends
- - Multi-agent orchestration modes
- - Persistent vector retrieval layer
- - Voice-enabled local assistant integration
+## Status
 
-# Status
+Active development.
+Phase 1 focuses on contracts, hashing, run layout, and manifest system.
 
-- Early-stage platform under active development.
-- Research Digest agent available as reference implementation.
+## License
 
-License
-
-TBD
+MIT

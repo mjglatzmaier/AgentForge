@@ -20,18 +20,101 @@ Build a public, professional research digest agent on top of a minimal orchestra
  - 0.3 .github/instructions.md (plain text)
 
 ## Phase 1: Define contracts and schemas (no LLM calls yet)
-- 1.0 Define core Pydantic models in agentforge/contracts/models.py:
-    - RunConfig (run_id, timestamp, mode, pipeline_name, git_sha optional)
-    - ArtifactRef (name, type, path, sha256, producer_step_id)
-    - Manifest (run_id, artifacts[], steps[])
-    - StepResult (step_id, status, started_at, ended_at, metrics, outputs[])
-    - PipelineSpec (name, steps[])
-    - StepSpec (id, kind: tool|agent, ref, inputs, outputs, config)
-- 1.1 Define JSON schema stubs in schemas/ (doc.json, digest.json, manifest.json, pipeline.json, agent.json).
-    (These can be minimal placeholders; Pydantic is source of truth.)
-- 1.2 Implement hashing utilities in agentforge/storage/hashing.py (sha256 for files + json-stable hashing).
-- 1.3 Implement run folder layout in agentforge/storage/run_layout.py:
-```
+- 1.0 Core enums and primitives
+  - Add enums in agentforge/contracts/models.py:
+    - Mode (prod | debug | eval)
+    - StepKind (tool | agent)
+    - StepStatus (success | failed | skipped)
+  - Add minimal shared type aliases if needed.
+  - Add unit tests under agentforge/tests/:
+    - Validate enum parsing and serialization.
+    - Ensure invalid values raise validation errors.
+
+- 1.1 Pydantic models: RunConfig and ArtifactRef
+  - Define RunConfig:
+    - run_id: str
+    - timestamp: datetime (timezone-aware)
+    - mode: Mode
+    - pipeline_name: str
+    - git_sha: Optional[str]
+  - Define ArtifactRef:
+    - name: str
+    - type: str
+    - path: str
+    - sha256: str
+    - producer_step_id: str
+  - Add unit tests:
+    - Valid construction
+    - Missing required fields rejected
+    - Datetime handling validated
+
+- 1.2 Pydantic models: StepSpec and PipelineSpec
+  - Define StepSpec:
+    - id: str
+    - kind: StepKind
+    - ref: str
+    - inputs: list[str] = []
+    - outputs: list[str] = []
+    - config: dict[str, Any] = {}
+  - Define PipelineSpec:
+    - name: str
+    - steps: list[StepSpec]
+  - Add validation:
+    - Unique step IDs
+    - Non-empty step IDs
+  - Add unit tests:
+    - Duplicate step IDs rejected
+    - Defaults handled correctly
+
+- 1.3 Pydantic models: StepResult and Manifest
+  - Define StepResult:
+    - step_id: str
+    - status: StepStatus
+    - started_at: datetime
+    - ended_at: datetime
+    - metrics: dict[str, float|int|str] = {}
+    - outputs: list[ArtifactRef] = []
+  - Define Manifest:
+    - run_id: str
+    - artifacts: list[ArtifactRef] = []
+    - steps: list[StepResult] = []
+  - Add helper methods:
+    - get_artifact(name)
+    - require_artifact(name)
+  - Add unit tests:
+    - Artifact lookup works
+    - require_artifact raises on missing
+    - StepResult fields validate
+
+- 1.4 JSON schema stubs in schemas/
+  - Create minimal placeholder schemas:
+    - schemas/doc.json
+    - schemas/digest.json
+    - schemas/manifest.json
+    - schemas/pipeline.json
+    - schemas/agent.json
+  - Pydantic models remain source of truth.
+  - No behavioral tests required (optional existence test).
+
+- 1.5 Hashing utilities
+  - Implement in agentforge/storage/hashing.py:
+    - sha256_file(path)
+    - sha256_str(s)
+    - stable_json_dumps(obj) (sorted keys, deterministic)
+    - sha256_json(obj)
+  - Ensure stable hashing for:
+    - dicts with different key order
+    - Pydantic models (via model_dump)
+  - Add unit tests:
+    - Stable hash equality for permuted dict keys
+    - Known file hash test
+    - Model hash consistency
+
+- 1.6 Run folder layout
+  - Implement in agentforge/storage/run_layout.py:
+    - create_run_layout(base_dir, run_id)
+    - create_step_dir(layout, step_index, step_id)
+  - Directory structure must match:
     runs/<run_id>/
       run.yaml
       manifest.json
@@ -39,8 +122,22 @@ Build a public, professional research digest agent on top of a minimal orchestra
         outputs/
         logs/
         meta.json
-```
-- 1.4 Implement manifest read/write and artifact lookup in agentforge/storage/manifest.py.
+  - Step directories zero-padded (e.g. 00_fetch_arxiv).
+  - Add unit tests:
+    - Folder structure created correctly
+    - Step folder naming verified
+
+- 1.7 Manifest read/write and artifact registration
+  - Implement in agentforge/storage/manifest.py:
+    - load_manifest(path)
+    - save_manifest(path, manifest) (atomic write)
+    - register_artifact(manifest, artifact)
+    - lookup_artifact(manifest, name)
+  - Enforce unique artifact names.
+  - Add unit tests:
+    - Manifest round-trip read/write
+    - Artifact lookup success
+    - Duplicate artifact names rejected
 
 Acceptance criteria:
 - You can create a run directory + empty manifest deterministically.

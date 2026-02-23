@@ -12,6 +12,13 @@ dependencies = [
   "python-dotenv>=1.0",
 ]
 
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["agentforge"]
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
@@ -20,7 +27,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["agents", "eval"]
+testpaths = ["agentforge", "agents", "eval"]
 
 [tool.ruff]
 line-length = 100

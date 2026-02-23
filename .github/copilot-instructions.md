@@ -1,8 +1,29 @@
 # AgentForge Development Instructions
+## Dev models
+- Default development model: GPT-5.3-Codex.
+- Use Claude Opus for architectural review or adversarial critique.
 
 ## Purpose
 
 AgentForge is a minimal, professional agent orchestration framework. All code must prioritize clarity, determinism, and architectural discipline over abstraction or novelty.
+
+## Build and Environment Assumptions
+
+- The Python virtual environment is already created and activated.
+- Dependencies are already installed via:
+    pip install -e .[dev]
+- Tests are executed with:
+    python -m pytest
+- Linting (optional) may use:
+    ruff check .
+- Type checking (optional) may use:
+    mypy agentforge
+
+When implementing tasks:
+- Do NOT add environment setup steps.
+- Do NOT modify pyproject.toml unless explicitly required.
+- Always run tests before concluding a task.
+- A task is not complete unless tests pass.
 
 ## Core Principles
 
@@ -39,6 +60,12 @@ Preserve strict separation between:
  - Agents communicate only via declared artifacts.
  - Evaluation must not modify production pipeline behavior.
  - Caching must be input-hash based and explicit.
+
+ ## Precommit Checklist
+ Every change must:
+- 1. Include unit tests.
+- 2. Maintain or increase test coverage.
+- 3. Avoid introducing unused dependencies.
 
 ## Execution Modes
 
