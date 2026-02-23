@@ -48,119 +48,210 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]      - Missing required fields rejected
    - [X]      - Datetime handling validated
 
-- 1.2 Pydantic models: StepSpec and PipelineSpec
-  - Define StepSpec:
-    - id: str
-    - kind: StepKind
-    - ref: str
-    - inputs: list[str] = []
-    - outputs: list[str] = []
-    - config: dict[str, Any] = {}
-  - Define PipelineSpec:
-    - name: str
-    - steps: list[StepSpec]
-  - Add validation:
-    - Unique step IDs
-    - Non-empty step IDs
-  - Add unit tests:
-    - Duplicate step IDs rejected
-    - Defaults handled correctly
+- [X] 1.2 Pydantic models: StepSpec and PipelineSpec
+   - [X]    - Define StepSpec:
+   - [X]      - id: str
+   - [X]      - kind: StepKind
+   - [X]      - ref: str
+   - [X]      - inputs: list[str] = []
+   - [X]      - outputs: list[str] = []
+   - [X]      - config: dict[str, Any] = {}
+   - [X]    - Define PipelineSpec:
+   - [X]      - name: str
+   - [X]      - steps: list[StepSpec]
+   - [X]    - Add validation:
+   - [X]      - Unique step IDs
+   - [X]      - Non-empty step IDs
+   - [X]    - Add unit tests:
+   - [X]      - Duplicate step IDs rejected
+   - [X]      - Defaults handled correctly
 
-- 1.3 Pydantic models: StepResult and Manifest
-  - Define StepResult:
-    - step_id: str
-    - status: StepStatus
-    - started_at: datetime
-    - ended_at: datetime
-    - metrics: dict[str, float|int|str] = {}
-    - outputs: list[ArtifactRef] = []
-  - Define Manifest:
-    - run_id: str
-    - artifacts: list[ArtifactRef] = []
-    - steps: list[StepResult] = []
-  - Add helper methods:
-    - get_artifact(name)
-    - require_artifact(name)
-  - Add unit tests:
-    - Artifact lookup works
-    - require_artifact raises on missing
-    - StepResult fields validate
+- [X] 1.3 Pydantic models: StepResult and Manifest
+   - [X]    - Define StepResult:
+   - [X]      - step_id: str
+   - [X]      - status: StepStatus
+   - [X]      - started_at: datetime
+   - [X]      - ended_at: datetime
+   - [X]      - metrics: dict[str, float|int|str] = {}
+   - [X]      - outputs: list[ArtifactRef] = []
+   - [X]    - Define Manifest:
+   - [X]      - run_id: str
+   - [X]      - artifacts: list[ArtifactRef] = []
+   - [X]      - steps: list[StepResult] = []
+   - [X]    - Add helper methods:
+   - [X]      - get_artifact(name)
+   - [X]      - require_artifact(name)
+   - [X]    - Add unit tests:
+   - [X]      - Artifact lookup works
+   - [X]      - require_artifact raises on missing
+   - [X]      - StepResult fields validate
 
-- 1.4 JSON schema stubs in schemas/
-  - Create minimal placeholder schemas:
-    - schemas/doc.json
-    - schemas/digest.json
-    - schemas/manifest.json
-    - schemas/pipeline.json
-    - schemas/agent.json
-  - Pydantic models remain source of truth.
-  - No behavioral tests required (optional existence test).
+- [X] 1.4 JSON schema stubs in schemas/
+   - [X]    - Create minimal placeholder schemas:
+   - [X]      - schemas/doc.json
+   - [X]      - schemas/digest.json
+   - [X]      - schemas/manifest.json
+   - [X]      - schemas/pipeline.json
+   - [X]      - schemas/agent.json
+   - [X]    - Pydantic models remain source of truth.
+   - [X]    - No behavioral tests required (optional existence test).
 
-- 1.5 Hashing utilities
-  - Implement in agentforge/storage/hashing.py:
-    - sha256_file(path)
-    - sha256_str(s)
-    - stable_json_dumps(obj) (sorted keys, deterministic)
-    - sha256_json(obj)
-  - Ensure stable hashing for:
-    - dicts with different key order
-    - Pydantic models (via model_dump)
-  - Add unit tests:
-    - Stable hash equality for permuted dict keys
-    - Known file hash test
-    - Model hash consistency
+- [X] 1.5 Hashing utilities
+   - [X]    - Implement in agentforge/storage/hashing.py:
+   - [X]      - sha256_file(path)
+   - [X]      - sha256_str(s)
+   - [X]      - stable_json_dumps(obj) (sorted keys, deterministic)
+   - [X]      - sha256_json(obj)
+   - [X]    - Ensure stable hashing for:
+   - [X]      - dicts with different key order
+   - [X]      - Pydantic models (via model_dump)
+   - [X]    - Add unit tests:
+   - [X]      - Stable hash equality for permuted dict keys
+   - [X]      - Known file hash test
+   - [X]      - Model hash consistency
 
-- 1.6 Run folder layout
-  - Implement in agentforge/storage/run_layout.py:
-    - create_run_layout(base_dir, run_id)
-    - create_step_dir(layout, step_index, step_id)
-  - Directory structure must match:
-    runs/<run_id>/
-      run.yaml
-      manifest.json
-      steps/<nn_step_id>/
-        outputs/
-        logs/
-        meta.json
-  - Step directories zero-padded (e.g. 00_fetch_arxiv).
-  - Add unit tests:
-    - Folder structure created correctly
-    - Step folder naming verified
+- [X] 1.6 Run folder layout
+   - [X]    - Implement in agentforge/storage/run_layout.py:
+   - [X]      - create_run_layout(base_dir, run_id)
+   - [X]      - create_step_dir(layout, step_index, step_id)
+   - [X]    - Directory structure must match:
+   - [X]      runs/<run_id>/
+   - [X]        run.yaml
+   - [X]        manifest.json
+   - [X]        steps/<nn_step_id>/
+   - [X]          outputs/
+   - [X]          logs/
+   - [X]          meta.json
+   - [X]    - Step directories zero-padded (e.g. 00_fetch_arxiv).
+   - [X]    - Add unit tests:
+   - [X]      - Folder structure created correctly
+   - [X]      - Step folder naming verified
 
-- 1.7 Manifest read/write and artifact registration
-  - Implement in agentforge/storage/manifest.py:
-    - load_manifest(path)
-    - save_manifest(path, manifest) (atomic write)
-    - register_artifact(manifest, artifact)
-    - lookup_artifact(manifest, name)
-  - Enforce unique artifact names.
-  - Add unit tests:
-    - Manifest round-trip read/write
-    - Artifact lookup success
-    - Duplicate artifact names rejected
+- [X] 1.7 Manifest read/write and artifact registration
+   - [X]    - Implement in agentforge/storage/manifest.py:
+   - [X]      - load_manifest(path)
+   - [X]      - save_manifest(path, manifest) (atomic write)
+   - [X]      - register_artifact(manifest, artifact)
+   - [X]      - lookup_artifact(manifest, name)
+   - [X]    - Enforce unique artifact names.
+   - [X]    - Add unit tests:
+   - [X]      - Manifest round-trip read/write
+   - [X]      - Artifact lookup success
+   - [X]      - Duplicate artifact names rejected
 
 Acceptance criteria:
 - You can create a run directory + empty manifest deterministically.
 - You can register and lookup artifacts by name without hardcoded paths.
 
 ## Phase 2: Orchestrator MVP (ordered steps)
-- 2.0 Implement Pipeline loader in agentforge/orchestrator/pipeline.py:
-    - load YAML -> PipelineSpec
-    - validate ordered steps + unique ids
-- 2.1 Implement Runner in agentforge/orchestrator/runner.py:
-    - create run_id
-    - create run directory
-    - execute steps sequentially
-    - write per-step meta.json
-    - append artifacts to manifest.json
-- 2.2 Implement simple step cache in agentforge/orchestrator/cache.py:
-    - cache key = stable hash(step spec + referenced input artifact hashes + mode)
-    - if cache hit, reuse outputs and record status=skipped
-- 2.3 Implement structured logging (agentforge/utils/logging.py) and ensure logs go under ```steps/<step>/logs/.```
 
-Acceptance criteria:
+- 2.0 Pipeline YAML loader (parse + validate)
+  - Implement in agentforge/orchestrator/pipeline.py:
+    - load_pipeline(path: str|Path) -> PipelineSpec
+    - parse YAML -> dict -> PipelineSpec (Pydantic validate)
+    - validate:
+      - pipeline name non-empty
+      - steps ordered as provided
+      - step ids unique (PipelineSpec already checks; ensure load surfaces good errors)
+  - Add unit tests:
+    - valid pipeline yaml loads to PipelineSpec
+    - duplicate step ids rejected
+    - missing required fields rejected
+
+- 2.1 Step function resolver (import + callable validation)
+  - Implement in agentforge/orchestrator/pipeline.py or a new agentforge/orchestrator/resolve.py:
+    - resolve_ref("module.path:function") -> callable
+    - validate ref format includes colon
+    - raise helpful errors if module/function missing
+  - Add unit tests:
+    - resolves a known local test function
+    - fails on bad format
+    - fails on missing function
+
+- 2.2 Runner skeleton (create run + initialize manifest)
+  - Implement in agentforge/orchestrator/runner.py:
+    - run_pipeline(pipeline_path: str|Path, base_dir: str|Path, mode: Mode) -> run_id
+    - create run_id (uuid4 string)
+    - create run layout (create_run_layout)
+    - write run.yaml (RunConfig dumped to YAML)
+    - init_manifest(manifest_json, run_id)
+    - returns run_id (no step execution yet)
+  - Add unit tests:
+    - run creates runs/<run_id>/ with steps/ directory
+    - run.yaml exists and is valid YAML
+    - manifest.json exists and is valid JSON with correct run_id
+
+- 2.3 Runner step execution (ordered, tool-only, no cache)
+  - Extend runner.py:
+    - execute steps sequentially
+    - for each step:
+      - create step_dir (00_<step_id>/)
+      - write meta.json (valid JSON) including step_id/status/timestamps/metrics/outputs
+      - call resolved function:
+        - convention for MVP: callable signature (context: dict) -> dict[str, Any]
+        - context includes: run_id, mode, run_dir, step_dir, manifest (in-memory), inputs (artifact refs)
+      - capture outputs as artifacts:
+        - write outputs into step_dir/outputs/
+        - compute sha256 for output files
+        - register artifacts in manifest with compound key (producer_step_id, name)
+      - save manifest after each step
+    - define a minimal “tool output contract” for MVP (documented in architecture.md later)
+  - Add unit tests:
+    - create a fake pipeline with 2 local tool functions that write files
+    - verify step meta.json exists and is valid JSON
+    - verify manifest contains expected artifacts with sha256 and correct relative paths
+
+- 2.4 Structured logging helper (per-step logs)
+  - Implement agentforge/utils/logging.py:
+    - get_step_logger(log_path: Path) -> logging.Logger
+    - logs go to steps/<step>/logs/step.log (or named file)
+    - avoid duplicate handlers when called multiple times
+  - Integrate into runner step loop:
+    - each step creates logger writing under its logs dir
+    - log start/end, cache hit/miss (later), artifact writes
+  - Add unit tests:
+    - logger writes to expected file
+    - repeated creation does not duplicate log lines (no duplicate handlers)
+
+- 2.5 Cache key computation (no skip behavior yet)
+  - Implement agentforge/orchestrator/cache.py:
+    - compute_step_cache_key(step: StepSpec, mode: Mode, input_artifacts: list[ArtifactRef]) -> str
+    - key uses stable hash of:
+      - step spec (id/kind/ref/config/inputs/outputs)
+      - mode
+      - input artifact sha256 values (sorted)
+  - Add unit tests:
+    - same inputs produce same key
+    - different config changes key
+    - different input artifact hash changes key
+
+- 2.6 Step cache storage (persisted mapping)
+  - Implement in cache.py:
+    - cache directory convention: runs/<run_id>/.cache/ (or runs/.cache/<pipeline_name>/)
+    - write cache record JSON:
+      - cache_key -> list of ArtifactRef outputs (and optionally meta)
+    - load cache record if exists
+  - Add unit tests:
+    - cache record round trip read/write
+    - cache miss returns None
+    - cache hit returns stored ArtifactRefs
+
+- 2.7 Cache skip integration (full acceptance criteria)
+  - Integrate cache into runner:
+    - before executing step:
+      - compute key
+      - if hit: reuse outputs (copy or link) into current run’s step outputs dir
+      - register artifacts, write meta.json with status=skipped, and log cache hit
+    - if miss: execute and then write cache record
+  - Add unit tests:
+    - run pipeline twice with same inputs reuses cached outputs
+    - second run records status=skipped for cached steps
+    - manifest artifacts match expected sha256 and paths
+
+Acceptance criteria (Phase 2):
 - Running a pipeline twice with same inputs reuses cached step outputs.
-- Manifest contains artifacts with sha256 and correct paths.
+- Manifest contains artifacts with sha256 and correct paths (relative to run dir).
+- meta.json files are valid JSON (never empty) for every step.
 
 ## Phase 3: Research Digest Agent (tools only, no LLM yet)
 - 3.0 Implement tools under agents/research_digest/tools:
