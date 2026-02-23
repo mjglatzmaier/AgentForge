@@ -144,23 +144,114 @@ Acceptance criteria:
 - You can register and lookup artifacts by name without hardcoded paths.
 
 ## Phase 2: Orchestrator MVP (ordered steps)
-- 2.0 Implement Pipeline loader in agentforge/orchestrator/pipeline.py:
-    - load YAML -> PipelineSpec
-    - validate ordered steps + unique ids
-- 2.1 Implement Runner in agentforge/orchestrator/runner.py:
-    - create run_id
-    - create run directory
-    - execute steps sequentially
-    - write per-step meta.json
-    - append artifacts to manifest.json
-- 2.2 Implement simple step cache in agentforge/orchestrator/cache.py:
-    - cache key = stable hash(step spec + referenced input artifact hashes + mode)
-    - if cache hit, reuse outputs and record status=skipped
-- 2.3 Implement structured logging (agentforge/utils/logging.py) and ensure logs go under ```steps/<step>/logs/.```
 
-Acceptance criteria:
+- 2.0 Pipeline YAML loader (parse + validate)
+  - Implement in agentforge/orchestrator/pipeline.py:
+    - load_pipeline(path: str|Path) -> PipelineSpec
+    - parse YAML -> dict -> PipelineSpec (Pydantic validate)
+    - validate:
+      - pipeline name non-empty
+      - steps ordered as provided
+      - step ids unique (PipelineSpec already checks; ensure load surfaces good errors)
+  - Add unit tests:
+    - valid pipeline yaml loads to PipelineSpec
+    - duplicate step ids rejected
+    - missing required fields rejected
+
+- 2.1 Step function resolver (import + callable validation)
+  - Implement in agentforge/orchestrator/pipeline.py or a new agentforge/orchestrator/resolve.py:
+    - resolve_ref("module.path:function") -> callable
+    - validate ref format includes colon
+    - raise helpful errors if module/function missing
+  - Add unit tests:
+    - resolves a known local test function
+    - fails on bad format
+    - fails on missing function
+
+- 2.2 Runner skeleton (create run + initialize manifest)
+  - Implement in agentforge/orchestrator/runner.py:
+    - run_pipeline(pipeline_path: str|Path, base_dir: str|Path, mode: Mode) -> run_id
+    - create run_id (uuid4 string)
+    - create run layout (create_run_layout)
+    - write run.yaml (RunConfig dumped to YAML)
+    - init_manifest(manifest_json, run_id)
+    - returns run_id (no step execution yet)
+  - Add unit tests:
+    - run creates runs/<run_id>/ with steps/ directory
+    - run.yaml exists and is valid YAML
+    - manifest.json exists and is valid JSON with correct run_id
+
+- 2.3 Runner step execution (ordered, tool-only, no cache)
+  - Extend runner.py:
+    - execute steps sequentially
+    - for each step:
+      - create step_dir (00_<step_id>/)
+      - write meta.json (valid JSON) including step_id/status/timestamps/metrics/outputs
+      - call resolved function:
+        - convention for MVP: callable signature (context: dict) -> dict[str, Any]
+        - context includes: run_id, mode, run_dir, step_dir, manifest (in-memory), inputs (artifact refs)
+      - capture outputs as artifacts:
+        - write outputs into step_dir/outputs/
+        - compute sha256 for output files
+        - register artifacts in manifest with compound key (producer_step_id, name)
+      - save manifest after each step
+    - define a minimal “tool output contract” for MVP (documented in architecture.md later)
+  - Add unit tests:
+    - create a fake pipeline with 2 local tool functions that write files
+    - verify step meta.json exists and is valid JSON
+    - verify manifest contains expected artifacts with sha256 and correct relative paths
+
+- 2.4 Structured logging helper (per-step logs)
+  - Implement agentforge/utils/logging.py:
+    - get_step_logger(log_path: Path) -> logging.Logger
+    - logs go to steps/<step>/logs/step.log (or named file)
+    - avoid duplicate handlers when called multiple times
+  - Integrate into runner step loop:
+    - each step creates logger writing under its logs dir
+    - log start/end, cache hit/miss (later), artifact writes
+  - Add unit tests:
+    - logger writes to expected file
+    - repeated creation does not duplicate log lines (no duplicate handlers)
+
+- 2.5 Cache key computation (no skip behavior yet)
+  - Implement agentforge/orchestrator/cache.py:
+    - compute_step_cache_key(step: StepSpec, mode: Mode, input_artifacts: list[ArtifactRef]) -> str
+    - key uses stable hash of:
+      - step spec (id/kind/ref/config/inputs/outputs)
+      - mode
+      - input artifact sha256 values (sorted)
+  - Add unit tests:
+    - same inputs produce same key
+    - different config changes key
+    - different input artifact hash changes key
+
+- 2.6 Step cache storage (persisted mapping)
+  - Implement in cache.py:
+    - cache directory convention: runs/<run_id>/.cache/ (or runs/.cache/<pipeline_name>/)
+    - write cache record JSON:
+      - cache_key -> list of ArtifactRef outputs (and optionally meta)
+    - load cache record if exists
+  - Add unit tests:
+    - cache record round trip read/write
+    - cache miss returns None
+    - cache hit returns stored ArtifactRefs
+
+- 2.7 Cache skip integration (full acceptance criteria)
+  - Integrate cache into runner:
+    - before executing step:
+      - compute key
+      - if hit: reuse outputs (copy or link) into current run’s step outputs dir
+      - register artifacts, write meta.json with status=skipped, and log cache hit
+    - if miss: execute and then write cache record
+  - Add unit tests:
+    - run pipeline twice with same inputs reuses cached outputs
+    - second run records status=skipped for cached steps
+    - manifest artifacts match expected sha256 and paths
+
+Acceptance criteria (Phase 2):
 - Running a pipeline twice with same inputs reuses cached step outputs.
-- Manifest contains artifacts with sha256 and correct paths.
+- Manifest contains artifacts with sha256 and correct paths (relative to run dir).
+- meta.json files are valid JSON (never empty) for every step.
 
 ## Phase 3: Research Digest Agent (tools only, no LLM yet)
 - 3.0 Implement tools under agents/research_digest/tools:
