@@ -1,5 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Manifest",
-  "type": "object"
+  "type": "object",
+  "required": ["run_id", "artifacts", "steps"],
+  "properties": {
+    "run_id": { "type": "string" },
+    "artifacts": { "type": "array" },
+    "steps": { "type": "array" }
+  },
+  "additionalProperties": true
 }

@@ -13,15 +13,16 @@ class RunLayout:
 def create_run_layout(base_dir: str | Path, run_id: str) -> RunLayout:
     base_path = Path(base_dir)
     run_dir = base_path / "runs" / run_id
+    steps_dir = run_dir / "steps"
+
     run_dir.mkdir(parents=True, exist_ok=True)
+    steps_dir.mkdir(exist_ok=True)
 
     run_yaml = run_dir / "run.yaml"
     manifest_json = run_dir / "manifest.json"
-    steps_dir = run_dir / "steps"
 
-    run_yaml.touch(exist_ok=True)
-    manifest_json.touch(exist_ok=True)
-    steps_dir.mkdir(exist_ok=True)
+    # Do NOT touch or create empty files here.
+    # The orchestrator should write run.yaml and call init_manifest(manifest_json, run_id).
 
     return RunLayout(
         run_dir=run_dir,
@@ -44,6 +45,10 @@ def create_step_dir(layout: RunLayout, step_index: int, step_id: str) -> Path:
 
     outputs_dir.mkdir(parents=True, exist_ok=True)
     logs_dir.mkdir(exist_ok=True)
-    meta_json.touch(exist_ok=True)
+
+    # For meta.json, prefer valid JSON if you create it at all.
+    # If you want to create it here, write "{}" rather than touching an empty file.
+    if not meta_json.exists():
+        meta_json.write_text("{}", encoding="utf-8")
 
     return step_dir

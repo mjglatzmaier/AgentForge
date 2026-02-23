@@ -1,5 +1,4 @@
 from enum import Enum
-from datetime import datetime
 from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
@@ -75,8 +74,8 @@ class PipelineSpec(BaseModel):
 class StepResult(BaseModel):
     step_id: str
     status: StepStatus
-    started_at: datetime
-    ended_at: datetime
+    started_at: AwareDatetime
+    ended_at: AwareDatetime
     metrics: dict[str, float | int | str] = Field(default_factory=dict)
     outputs: list[ArtifactRef] = Field(default_factory=list)
 
@@ -86,14 +85,20 @@ class Manifest(BaseModel):
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     steps: list[StepResult] = Field(default_factory=list)
 
-    def get_artifact(self, name: str) -> ArtifactRef | None:
+    def get_artifact(self, producer_step_id: str, name: str) -> ArtifactRef | None:
         for artifact in self.artifacts:
-            if artifact.name == name:
+            if artifact.producer_step_id == producer_step_id and artifact.name == name:
                 return artifact
         return None
 
-    def require_artifact(self, name: str) -> ArtifactRef:
-        artifact = self.get_artifact(name)
+    def require_artifact(self, producer_step_id: str, name: str) -> ArtifactRef:
+        artifact = self.get_artifact(producer_step_id, name)
         if artifact is None:
-            raise KeyError(f"Artifact not found: {name}")
+            raise KeyError(f"Artifact not found: ({producer_step_id}, {name})")
         return artifact
+
+    def get_latest_by_name(self, name: str) -> ArtifactRef | None:
+        for artifact in reversed(self.artifacts):
+            if artifact.name == name:
+                return artifact
+        return None
