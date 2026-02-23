@@ -1,4 +1,5 @@
 from enum import Enum
+from datetime import datetime
 from typing import Any
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
@@ -69,3 +70,30 @@ class PipelineSpec(BaseModel):
         if len(step_ids) != len(set(step_ids)):
             raise ValueError("Step IDs must be unique")
         return self
+
+
+class StepResult(BaseModel):
+    step_id: str
+    status: StepStatus
+    started_at: datetime
+    ended_at: datetime
+    metrics: dict[str, float | int | str] = Field(default_factory=dict)
+    outputs: list[ArtifactRef] = Field(default_factory=list)
+
+
+class Manifest(BaseModel):
+    run_id: str
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+    steps: list[StepResult] = Field(default_factory=list)
+
+    def get_artifact(self, name: str) -> ArtifactRef | None:
+        for artifact in self.artifacts:
+            if artifact.name == name:
+                return artifact
+        return None
+
+    def require_artifact(self, name: str) -> ArtifactRef:
+        artifact = self.get_artifact(name)
+        if artifact is None:
+            raise KeyError(f"Artifact not found: {name}")
+        return artifact
