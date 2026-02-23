@@ -110,22 +110,22 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]      - Known file hash test
    - [X]      - Model hash consistency
 
-- 1.6 Run folder layout
-  - Implement in agentforge/storage/run_layout.py:
-    - create_run_layout(base_dir, run_id)
-    - create_step_dir(layout, step_index, step_id)
-  - Directory structure must match:
-    runs/<run_id>/
-      run.yaml
-      manifest.json
-      steps/<nn_step_id>/
-        outputs/
-        logs/
-        meta.json
-  - Step directories zero-padded (e.g. 00_fetch_arxiv).
-  - Add unit tests:
-    - Folder structure created correctly
-    - Step folder naming verified
+- [X] 1.6 Run folder layout
+   - [X]    - Implement in agentforge/storage/run_layout.py:
+   - [X]      - create_run_layout(base_dir, run_id)
+   - [X]      - create_step_dir(layout, step_index, step_id)
+   - [X]    - Directory structure must match:
+   - [X]      runs/<run_id>/
+   - [X]        run.yaml
+   - [X]        manifest.json
+   - [X]        steps/<nn_step_id>/
+   - [X]          outputs/
+   - [X]          logs/
+   - [X]          meta.json
+   - [X]    - Step directories zero-padded (e.g. 00_fetch_arxiv).
+   - [X]    - Add unit tests:
+   - [X]      - Folder structure created correctly
+   - [X]      - Step folder naming verified
 
 - 1.7 Manifest read/write and artifact registration
   - Implement in agentforge/storage/manifest.py:
