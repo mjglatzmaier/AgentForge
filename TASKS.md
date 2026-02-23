@@ -86,15 +86,15 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]      - require_artifact raises on missing
    - [X]      - StepResult fields validate
 
-- 1.4 JSON schema stubs in schemas/
-  - Create minimal placeholder schemas:
-    - schemas/doc.json
-    - schemas/digest.json
-    - schemas/manifest.json
-    - schemas/pipeline.json
-    - schemas/agent.json
-  - Pydantic models remain source of truth.
-  - No behavioral tests required (optional existence test).
+- [X] 1.4 JSON schema stubs in schemas/
+   - [X]    - Create minimal placeholder schemas:
+   - [X]      - schemas/doc.json
+   - [X]      - schemas/digest.json
+   - [X]      - schemas/manifest.json
+   - [X]      - schemas/pipeline.json
+   - [X]      - schemas/agent.json
+   - [X]    - Pydantic models remain source of truth.
+   - [X]    - No behavioral tests required (optional existence test).
 
 - 1.5 Hashing utilities
   - Implement in agentforge/storage/hashing.py:
