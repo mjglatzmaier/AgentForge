@@ -127,17 +127,17 @@ Build a public, professional research digest agent on top of a minimal orchestra
    - [X]      - Folder structure created correctly
    - [X]      - Step folder naming verified
 
-- 1.7 Manifest read/write and artifact registration
-  - Implement in agentforge/storage/manifest.py:
-    - load_manifest(path)
-    - save_manifest(path, manifest) (atomic write)
-    - register_artifact(manifest, artifact)
-    - lookup_artifact(manifest, name)
-  - Enforce unique artifact names.
-  - Add unit tests:
-    - Manifest round-trip read/write
-    - Artifact lookup success
-    - Duplicate artifact names rejected
+- [X] 1.7 Manifest read/write and artifact registration
+   - [X]    - Implement in agentforge/storage/manifest.py:
+   - [X]      - load_manifest(path)
+   - [X]      - save_manifest(path, manifest) (atomic write)
+   - [X]      - register_artifact(manifest, artifact)
+   - [X]      - lookup_artifact(manifest, name)
+   - [X]    - Enforce unique artifact names.
+   - [X]    - Add unit tests:
+   - [X]      - Manifest round-trip read/write
+   - [X]      - Artifact lookup success
+   - [X]      - Duplicate artifact names rejected
 
 Acceptance criteria:
 - You can create a run directory + empty manifest deterministically.
