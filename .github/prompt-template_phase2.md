@@ -48,7 +48,7 @@ You are working in the AgentForge repository.
 Use model: GPT-5.3-Codex.
 
 Task:
-Complete TASKS.md item [phase2.0] ([phase2.0]).
+Complete TASKS.md item [phase2.1] ([phase2.1]).
 Do NOT implement anything beyond this task.
 
 Constraints (must follow):
@@ -74,5 +74,6 @@ C) Commands run and results (pytest output summarized).
 D) Suggested Conventional Commit message (title + body).
 E) Exact TASKS.md checkbox lines that should be marked complete.
 F) Whether docs/architecture.md or .github/copilot-instructions.md require updates (yes/no + why).
+G) Update tasks.md by marking [x] next to each task and subtask completed.
 
-Now implement [phase2.0].
+Now implement [phase2.1].

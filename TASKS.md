@@ -154,16 +154,16 @@ All tasks must be small, testable, and mergeable independently.
 
 ## 2.0 Pipeline YAML Loader (Parse + Validate)
 
-- 2.0.1 Implement load_pipeline(path: str | Path) -> PipelineSpec
+- [X] 2.0.1 Implement load_pipeline(path: str | Path) -> PipelineSpec
     - Read YAML using yaml.safe_load
     - Fail clearly if file not found
     - Fail clearly on YAML parse errors
-- 2.0.2 Validate:
+- [X] 2.0.2 Validate:
     - Root must be mapping/dict
     - Pipeline name non-empty
-- 2.0.3 Convert dict -> PipelineSpec using Pydantic
+- [X] 2.0.3 Convert dict -> PipelineSpec using Pydantic
     - Surface validation errors cleanly
-- 2.0.4 Unit tests:
+- [X] 2.0.4 Unit tests:
     - Valid pipeline loads successfully
     - Duplicate step ids rejected
     - Missing required fields rejected
@@ -177,17 +177,17 @@ Acceptance criteria:
 
 ## 2.1 Step Resolver (Callable Import Validation)
 
-- 2.1.1 Implement resolve_ref("module.path:function") -> callable
+- [X] 2.1.1 Implement resolve_ref("module.path:function") -> callable
     - Validate colon format
     - Import module
     - Lookup function
     - Ensure object is callable
-- 2.1.2 Raise clear errors for:
+- [X] 2.1.2 Raise clear errors for:
     - Missing colon
     - Missing module
     - Missing function
     - Non-callable object
-- 2.1.3 Unit tests:
+- [X] 2.1.3 Unit tests:
     - Resolves known test function
     - Fails on bad format
     - Fails on missing module/function
