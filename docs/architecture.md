@@ -38,6 +38,19 @@ Execution is strictly sequential (no DAG in MVP). The orchestrator is responsibl
  - Agents are modular units defined under:
  - ```agents/<agent_name>/```
 
+## Step Execution Contract (MVP)
+
+Each `StepSpec.ref` resolves to a Python callable with signature:
+
+`(context: dict) -> dict[str, Any]`
+
+The orchestrator validates step output keys against `StepSpec.outputs` before any artifact handling:
+
+ - Returned keys must exactly match declared output names.
+ - Undeclared outputs are rejected.
+ - Missing declared outputs are rejected.
+ - Empty output is valid only when `StepSpec.outputs` is empty.
+
 Each agent contains:
 
  - agent.yaml (metadata and runtime definition)
