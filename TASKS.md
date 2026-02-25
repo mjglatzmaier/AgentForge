@@ -143,110 +143,356 @@ Acceptance criteria:
 - You can create a run directory + empty manifest deterministically.
 - You can register and lookup artifacts by name without hardcoded paths.
 
-## Phase 2: Orchestrator MVP (ordered steps)
+## Phase 2: Orchestrator MVP (Ordered Steps, Deterministic Execution)
 
-- 2.0 Pipeline YAML loader (parse + validate)
-  - Implement in agentforge/orchestrator/pipeline.py:
-    - load_pipeline(path: str|Path) -> PipelineSpec
-    - parse YAML -> dict -> PipelineSpec (Pydantic validate)
-    - validate:
-      - pipeline name non-empty
-      - steps ordered as provided
-      - step ids unique (PipelineSpec already checks; ensure load surfaces good errors)
-  - Add unit tests:
-    - valid pipeline yaml loads to PipelineSpec
-    - duplicate step ids rejected
-    - missing required fields rejected
+Goal:
+Implement a minimal, deterministic sequential pipeline runner with strict artifact contracts and no DAG complexity.
 
-- 2.1 Step function resolver (import + callable validation)
-  - Implement in agentforge/orchestrator/pipeline.py or a new agentforge/orchestrator/resolve.py:
-    - resolve_ref("module.path:function") -> callable
-    - validate ref format includes colon
-    - raise helpful errors if module/function missing
-  - Add unit tests:
-    - resolves a known local test function
-    - fails on bad format
-    - fails on missing function
+All tasks must be small, testable, and mergeable independently.
 
-- 2.2 Runner skeleton (create run + initialize manifest)
-  - Implement in agentforge/orchestrator/runner.py:
-    - run_pipeline(pipeline_path: str|Path, base_dir: str|Path, mode: Mode) -> run_id
-    - create run_id (uuid4 string)
-    - create run layout (create_run_layout)
-    - write run.yaml (RunConfig dumped to YAML)
-    - init_manifest(manifest_json, run_id)
-    - returns run_id (no step execution yet)
-  - Add unit tests:
-    - run creates runs/<run_id>/ with steps/ directory
-    - run.yaml exists and is valid YAML
-    - manifest.json exists and is valid JSON with correct run_id
+---
 
-- 2.3 Runner step execution (ordered, tool-only, no cache)
-  - Extend runner.py:
-    - execute steps sequentially
-    - for each step:
-      - create step_dir (00_<step_id>/)
-      - write meta.json (valid JSON) including step_id/status/timestamps/metrics/outputs
-      - call resolved function:
-        - convention for MVP: callable signature (context: dict) -> dict[str, Any]
-        - context includes: run_id, mode, run_dir, step_dir, manifest (in-memory), inputs (artifact refs)
-      - capture outputs as artifacts:
-        - write outputs into step_dir/outputs/
-        - compute sha256 for output files
-        - register artifacts in manifest with compound key (producer_step_id, name)
-      - save manifest after each step
-    - define a minimal “tool output contract” for MVP (documented in architecture.md later)
-  - Add unit tests:
-    - create a fake pipeline with 2 local tool functions that write files
-    - verify step meta.json exists and is valid JSON
-    - verify manifest contains expected artifacts with sha256 and correct relative paths
+## 2.0 Pipeline YAML Loader (Parse + Validate)
 
-- 2.4 Structured logging helper (per-step logs)
-  - Implement agentforge/utils/logging.py:
-    - get_step_logger(log_path: Path) -> logging.Logger
-    - logs go to steps/<step>/logs/step.log (or named file)
-    - avoid duplicate handlers when called multiple times
-  - Integrate into runner step loop:
-    - each step creates logger writing under its logs dir
-    - log start/end, cache hit/miss (later), artifact writes
-  - Add unit tests:
-    - logger writes to expected file
-    - repeated creation does not duplicate log lines (no duplicate handlers)
+- [X] 2.0.1 Implement load_pipeline(path: str | Path) -> PipelineSpec
+    - Read YAML using yaml.safe_load
+    - Fail clearly if file not found
+    - Fail clearly on YAML parse errors
+- [X] 2.0.2 Validate:
+    - Root must be mapping/dict
+    - Pipeline name non-empty
+- [X] 2.0.3 Convert dict -> PipelineSpec using Pydantic
+    - Surface validation errors cleanly
+- [X] 2.0.4 Unit tests:
+    - Valid pipeline loads successfully
+    - Duplicate step ids rejected
+    - Missing required fields rejected
+    - Non-dict root rejected
 
-- 2.5 Cache key computation (no skip behavior yet)
-  - Implement agentforge/orchestrator/cache.py:
-    - compute_step_cache_key(step: StepSpec, mode: Mode, input_artifacts: list[ArtifactRef]) -> str
-    - key uses stable hash of:
-      - step spec (id/kind/ref/config/inputs/outputs)
-      - mode
-      - input artifact sha256 values (sorted)
-  - Add unit tests:
-    - same inputs produce same key
-    - different config changes key
-    - different input artifact hash changes key
+Acceptance criteria:
+- YAML loading is deterministic and produces PipelineSpec.
+- Validation errors are clear and anchored to file path.
 
-- 2.6 Step cache storage (persisted mapping)
-  - Implement in cache.py:
-    - cache directory convention: runs/<run_id>/.cache/ (or runs/.cache/<pipeline_name>/)
-    - write cache record JSON:
-      - cache_key -> list of ArtifactRef outputs (and optionally meta)
-    - load cache record if exists
-  - Add unit tests:
-    - cache record round trip read/write
-    - cache miss returns None
-    - cache hit returns stored ArtifactRefs
+---
 
-- 2.7 Cache skip integration (full acceptance criteria)
-  - Integrate cache into runner:
-    - before executing step:
-      - compute key
-      - if hit: reuse outputs (copy or link) into current run’s step outputs dir
-      - register artifacts, write meta.json with status=skipped, and log cache hit
-    - if miss: execute and then write cache record
-  - Add unit tests:
-    - run pipeline twice with same inputs reuses cached outputs
-    - second run records status=skipped for cached steps
-    - manifest artifacts match expected sha256 and paths
+## 2.1 Step Resolver (Callable Import Validation)
+
+- [X] 2.1.1 Implement resolve_ref("module.path:function") -> callable
+    - Validate colon format
+    - Import module
+    - Lookup function
+    - Ensure object is callable
+- [X] 2.1.2 Raise clear errors for:
+    - Missing colon
+    - Missing module
+    - Missing function
+    - Non-callable object
+- [X] 2.1.3 Unit tests:
+    - Resolves known test function
+    - Fails on bad format
+    - Fails on missing module/function
+
+Acceptance criteria:
+- Step ref resolution deterministic and explicit.
+- No silent import failures.
+
+---
+
+## 2.2 Execution Contract Definition (Before Runner Logic)
+
+Define strict MVP step contract:
+
+Callable signature:
+    (context: dict) -> dict[str, Any]
+
+Rules:
+- Returned keys must exactly match StepSpec.outputs.
+- Undeclared outputs -> error.
+- Missing declared outputs -> error.
+- Empty output allowed only if outputs list empty.
+
+- [X] 2.2.1 Document contract in architecture.md
+- [X] 2.2.2 Implement validation helper:
+    validate_step_outputs(step: StepSpec, returned: dict)
+
+- [X] 2.2.3 Unit tests:
+    - Undeclared output rejected
+    - Missing output rejected
+    - Correct match accepted
+
+Acceptance criteria:
+- Orchestrator enforces declared artifact contract.
+- Tool behavior predictable and validated.
+
+---
+
+## 2.3 Runner Skeleton (No Execution Yet)
+
+- [X] 2.3.1 Implement run_pipeline(pipeline_path, base_dir, mode) -> run_id
+    - Generate uuid4 run_id
+    - Create run layout
+    - Write run.yaml (RunConfig)
+    - Initialize empty manifest.json
+- [X] 2.3.2 Unit tests:
+    - run directory created
+    - run.yaml valid
+    - manifest.json exists and contains correct run_id
+
+Acceptance criteria:
+- Running pipeline creates deterministic run directory.
+- No step execution yet.
+
+---
+
+## 2.4 Structured Per-Step Logging
+
+- [X] 2.4.1 Implement get_step_logger(log_path: Path)
+    - Writes to steps/<step>/logs/step.log
+    - Avoid duplicate handlers
+- [X] 2.4.2 Unit tests:
+    - Logger writes to correct file
+    - Repeated creation does not duplicate log entries
+
+Acceptance criteria:
+- Logging infrastructure exists before execution logic.
+
+---
+
+## 2.5 Sequential Step Execution (No Cache)
+
+- 2.5.1 Extend runner to:
+    - Iterate steps in order
+    - Create zero-padded step directory
+    - Write meta.json with:
+        - step_id
+        - started_at
+        - ended_at
+        - status
+        - metrics (empty dict allowed)
+        - outputs
+    - Call resolved callable
+    - Validate returned outputs
+    - Write outputs to step_dir/outputs/
+    - Compute sha256 for each output
+    - Register artifacts in manifest
+    - Persist manifest after each step
+- 2.5.2 Define failure behavior:
+    - On exception:
+        - status = failed
+        - meta.json written
+        - manifest updated with StepResult
+        - pipeline halts
+    - No artifacts registered on failure
+- 2.5.3 Unit tests:
+    - Two-step fake pipeline executes in order
+    - meta.json valid for each step
+    - manifest contains expected artifacts
+    - Failure halts execution
+
+Acceptance criteria:
+- Deterministic sequential execution works.
+- Failure semantics explicit and reproducible.
+- All artifacts declared and registered.
+
+---
+
+## 2.6 Cache Key Computation (No Skip Yet)
+
+- 2.6.1 Implement compute_step_cache_key(step, mode, input_artifacts)
+    - Stable hash of:
+        - step spec (id/kind/ref/config/inputs/outputs)
+        - mode
+        - input artifact sha256 values (sorted)
+- 2.6.2 Unit tests:
+    - Same inputs produce same key
+    - Different config changes key
+    - Different input hash changes key
+
+Acceptance criteria:
+- Cache key deterministic and stable.
+
+---
+
+## 2.7 Cache Storage Layer (No Integration Yet)
+
+- 2.7.1 Define shared cache directory:
+        runs/.cache/<pipeline_name>/
+- 2.7.2 Store:
+        cache_key -> serialized ArtifactRef outputs
+- 2.7.3 Load cache record if exists
+- 2.7.4 Unit tests:
+    - Cache record round-trip works
+    - Cache miss returns None
+
+Acceptance criteria:
+- Cache storage reliable and isolated.
+
+---
+
+## 2.8 Cache Integration (Full Skip Behavior)
+
+- 2.8.1 Before executing step:
+    - Compute cache key
+    - If hit:
+        - Verify cached files exist
+        - Verify sha256 matches record
+        - Copy or link outputs into new step directory
+        - Register artifacts
+        - Write meta.json with status=skipped
+        - Log cache hit
+    - If miss:
+        - Execute step normally
+        - Write cache record on success
+- 2.8.2 Ensure:
+    - Failed steps never cached
+    - Corrupted cache treated as miss
+- 2.8.3 Unit tests:
+    - Running pipeline twice reuses cached outputs
+    - Second run marks cached steps as skipped
+    - Corrupted cache triggers re-execution
+
+Acceptance criteria:
+- Running pipeline twice with identical inputs reuses outputs.
+- Cache cannot silently corrupt execution.
+----
+
+## Phase 2.8: Artifact Identity and Naming Rules
+
+- 2.8.0 Define artifact naming invariant:
+    - ArtifactRef.name must be globally unique within a run.
+    - producer_step_id stored as metadata only.
+    - Manifest lookup by name must be deterministic.
+- 2.8.1 Enforce:
+    - register_artifact rejects duplicate artifact names.
+    - Artifact paths must be relative to run root.
+- 2.8.2 Add tests:
+    - Duplicate artifact names raise error.
+    - Absolute paths rejected.
+    - Manifest round-trip preserves relative paths.
+
+Acceptance criteria:
+- Artifact identity model is explicit and enforced.
+- No ambiguity between step-scoped and run-scoped artifact naming.
+
+---
+
+## Phase 2.9: Step Execution Contract Formalization
+
+- 2.9.0 Define strict MVP tool contract:
+    - Callable signature:
+        (context: dict) -> dict[str, Any]
+    - Returned keys must match StepSpec.outputs.
+    - Returning undeclared outputs raises error.
+    - Missing declared outputs raises error.
+- 2.9.1 Document contract in docs/architecture.md.
+- 2.9.2 Add validation layer in runner before artifact registration.
+- 2.9.3 Add tests:
+    - Undeclared output rejected.
+    - Missing declared output rejected.
+    - Empty output allowed only if outputs list empty.
+
+Acceptance criteria:
+- Step behavior is predictable and validated.
+- Orchestrator enforces declared artifact contracts.
+
+---
+
+## Phase 2.10: Failure Semantics and Determinism Guarantees
+
+- 2.10.0 Define failure behavior:
+    - On exception:
+        - StepStatus = failed
+        - meta.json written
+        - Manifest updated with StepResult
+        - Pipeline execution halts.
+    - Failed steps are never cached.
+- 2.10.1 Ensure:
+    - sha256 mismatch triggers failure.
+    - Manifest writes are atomic.
+- 2.10.2 Add tests:
+    - Tool raising exception marks step failed.
+    - No artifacts registered on failure.
+    - Subsequent steps not executed.
+
+Acceptance criteria:
+- Failure state is explicit and reproducible.
+- No partial silent corruption possible.
+
+---
+
+## Phase 2.11: Cache Robustness Hardening
+
+- 2.11.0 Define cache scope:
+    - Shared cache directory:
+        runs/.cache/<pipeline_name>/
+- 2.11.1 On cache hit:
+    - Verify cached artifact files still exist.
+    - Verify sha256 matches record.
+    - If mismatch, treat as cache miss.
+- 2.11.2 Ensure:
+    - Cache records include pipeline_name.
+    - Cache key includes mode.
+- 2.11.3 Add tests:
+    - Corrupted cache record triggers miss.
+    - Different mode produces different cache key.
+    - Cache never stores failed steps.
+
+Acceptance criteria:
+- Cache cannot silently produce incorrect outputs.
+- Cache integrity validated before reuse.
+
+---
+
+## Phase 2.12: Mode Determinism Verification
+
+- 2.12.0 Add test:
+    - Same pipeline in prod vs debug produces identical artifacts (except metadata/logs).
+- 2.12.1 Define:
+    - Mode affects only:
+        - logging verbosity
+        - metadata fields
+    - Mode must not change semantic artifact outputs.
+- 2.12.2 Add assertion in runner:
+    - mode not passed into tool unless explicitly requested.
+
+Acceptance criteria:
+- Mode isolation enforced.
+- Evaluation runs reproducible across environments.
+
+---
+
+## Phase 2.13: CLI Entry Point Specification
+
+- 2.13.0 Define minimal CLI:
+    - agentforge run <pipeline.yaml> [--mode prod|debug|eval]
+    - agentforge eval <run_id>
+- 2.13.1 Define exit codes:
+    - 0 = success
+    - 1 = validation error
+    - 2 = runtime failure
+- 2.13.2 Add integration test:
+    - CLI invocation creates run directory successfully.
+
+Acceptance criteria:
+- Platform usable without importing Python modules directly.
+- Error behavior consistent and predictable.
+
+---
+
+## Phase 2.14: Runtime Abstraction Boundary (Future-proofing)
+
+- 2.14.0 Introduce execution interface:
+    - StepExecutor base class
+        - execute(step, context) -> StepResult
+- 2.14.1 Current implementation: InProcExecutor.
+- 2.14.2 Document extension path for:
+    - SubprocessExecutor
+    - ContainerExecutor
+
+Acceptance criteria:
+- Orchestrator does not depend directly on callable invocation.
+- Future runtime models pluggable without refactor.
+
 
 Acceptance criteria (Phase 2):
 - Running a pipeline twice with same inputs reuses cached step outputs.
