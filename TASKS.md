@@ -246,10 +246,10 @@ Acceptance criteria:
 
 ## 2.4 Structured Per-Step Logging
 
-- 2.4.1 Implement get_step_logger(log_path: Path)
+- [X] 2.4.1 Implement get_step_logger(log_path: Path)
     - Writes to steps/<step>/logs/step.log
     - Avoid duplicate handlers
-- 2.4.2 Unit tests:
+- [X] 2.4.2 Unit tests:
     - Logger writes to correct file
     - Repeated creation does not duplicate log entries
 
