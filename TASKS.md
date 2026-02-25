@@ -211,11 +211,11 @@ Rules:
 - Missing declared outputs -> error.
 - Empty output allowed only if outputs list empty.
 
-- 2.2.1 Document contract in architecture.md
-- 2.2.2 Implement validation helper:
+- [X] 2.2.1 Document contract in architecture.md
+- [X] 2.2.2 Implement validation helper:
     validate_step_outputs(step: StepSpec, returned: dict)
 
-- 2.2.3 Unit tests:
+- [X] 2.2.3 Unit tests:
     - Undeclared output rejected
     - Missing output rejected
     - Correct match accepted
