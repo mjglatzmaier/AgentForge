@@ -228,12 +228,12 @@ Acceptance criteria:
 
 ## 2.3 Runner Skeleton (No Execution Yet)
 
-- 2.3.1 Implement run_pipeline(pipeline_path, base_dir, mode) -> run_id
+- [X] 2.3.1 Implement run_pipeline(pipeline_path, base_dir, mode) -> run_id
     - Generate uuid4 run_id
     - Create run layout
     - Write run.yaml (RunConfig)
     - Initialize empty manifest.json
-- 2.3.2 Unit tests:
+- [X] 2.3.2 Unit tests:
     - run directory created
     - run.yaml valid
     - manifest.json exists and contains correct run_id
