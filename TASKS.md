@@ -315,12 +315,12 @@ Acceptance criteria:
 
 ## 2.7 Cache Storage Layer (No Integration Yet)
 
-- 2.7.1 Define shared cache directory:
+- [X] 2.7.1 Define shared cache directory:
         runs/.cache/<pipeline_name>/
-- 2.7.2 Store:
+- [X] 2.7.2 Store:
         cache_key -> serialized ArtifactRef outputs
-- 2.7.3 Load cache record if exists
-- 2.7.4 Unit tests:
+- [X] 2.7.3 Load cache record if exists
+- [X] 2.7.4 Unit tests:
     - Cache record round-trip works
     - Cache miss returns None
 
