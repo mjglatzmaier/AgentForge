@@ -142,19 +142,6 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 step_dir=step_dir,
                 run_dir=layout.run_dir,
             )
-
-            step_result = StepResult(
-                step_id=step.id,
-                status=StepStatus.SUCCESS,
-                started_at=started_at,
-                ended_at=_utcnow(),
-                metrics=metrics,
-                outputs=artifacts,
-            )
-            manifest.steps.append(step_result)
-            register_artifacts(manifest, artifacts)
-            save_manifest(layout.manifest_json, manifest)
-            _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
             cache_outputs = _copy_outputs_into_cache(
                 artifacts=artifacts,
                 base_path=base_path,
@@ -169,6 +156,19 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 cache_key=cache_key,
                 outputs=cache_outputs,
             )
+
+            step_result = StepResult(
+                step_id=step.id,
+                status=StepStatus.SUCCESS,
+                started_at=started_at,
+                ended_at=_utcnow(),
+                metrics=metrics,
+                outputs=artifacts,
+            )
+            manifest.steps.append(step_result)
+            register_artifacts(manifest, artifacts)
+            save_manifest(layout.manifest_json, manifest)
+            _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
         except Exception as exc:
             step_result = StepResult(
                 step_id=step.id,
