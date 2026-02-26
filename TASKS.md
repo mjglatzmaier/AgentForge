@@ -260,7 +260,7 @@ Acceptance criteria:
 
 ## 2.5 Sequential Step Execution (No Cache)
 
-- 2.5.1 Extend runner to:
+- [X] 2.5.1 Extend runner to:
     - Iterate steps in order
     - Create zero-padded step directory
     - Write meta.json with:
@@ -276,14 +276,14 @@ Acceptance criteria:
     - Compute sha256 for each output
     - Register artifacts in manifest
     - Persist manifest after each step
-- 2.5.2 Define failure behavior:
+- [X] 2.5.2 Define failure behavior:
     - On exception:
         - status = failed
         - meta.json written
         - manifest updated with StepResult
         - pipeline halts
     - No artifacts registered on failure
-- 2.5.3 Unit tests:
+- [X] 2.5.3 Unit tests:
     - Two-step fake pipeline executes in order
     - meta.json valid for each step
     - manifest contains expected artifacts
@@ -298,12 +298,12 @@ Acceptance criteria:
 
 ## 2.6 Cache Key Computation (No Skip Yet)
 
-- 2.6.1 Implement compute_step_cache_key(step, mode, input_artifacts)
+- [X] 2.6.1 Implement compute_step_cache_key(step, mode, input_artifacts)
     - Stable hash of:
         - step spec (id/kind/ref/config/inputs/outputs)
         - mode
         - input artifact sha256 values (sorted)
-- 2.6.2 Unit tests:
+- [X] 2.6.2 Unit tests:
     - Same inputs produce same key
     - Different config changes key
     - Different input hash changes key
@@ -315,12 +315,12 @@ Acceptance criteria:
 
 ## 2.7 Cache Storage Layer (No Integration Yet)
 
-- 2.7.1 Define shared cache directory:
+- [X] 2.7.1 Define shared cache directory:
         runs/.cache/<pipeline_name>/
-- 2.7.2 Store:
+- [X] 2.7.2 Store:
         cache_key -> serialized ArtifactRef outputs
-- 2.7.3 Load cache record if exists
-- 2.7.4 Unit tests:
+- [X] 2.7.3 Load cache record if exists
+- [X] 2.7.4 Unit tests:
     - Cache record round-trip works
     - Cache miss returns None
 
@@ -331,7 +331,7 @@ Acceptance criteria:
 
 ## 2.8 Cache Integration (Full Skip Behavior)
 
-- 2.8.1 Before executing step:
+- [X] 2.8.1 Before executing step:
     - Compute cache key
     - If hit:
         - Verify cached files exist
@@ -343,10 +343,10 @@ Acceptance criteria:
     - If miss:
         - Execute step normally
         - Write cache record on success
-- 2.8.2 Ensure:
+- [X] 2.8.2 Ensure:
     - Failed steps never cached
     - Corrupted cache treated as miss
-- 2.8.3 Unit tests:
+- [X] 2.8.3 Unit tests:
     - Running pipeline twice reuses cached outputs
     - Second run marks cached steps as skipped
     - Corrupted cache triggers re-execution

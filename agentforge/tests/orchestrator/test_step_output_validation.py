@@ -12,22 +12,41 @@ def test_validate_step_outputs_rejects_undeclared_output() -> None:
     step = _step(outputs=["docs"])
 
     with pytest.raises(ValueError, match="undeclared outputs"):
-        validate_step_outputs(step, {"docs": "ok", "extra": "nope"})
+        validate_step_outputs(
+            step,
+            {
+                "outputs": [
+                    {"name": "docs", "type": "json", "path": "outputs/docs.json"},
+                    {"name": "extra", "type": "json", "path": "outputs/extra.json"},
+                ]
+            },
+        )
 
 
 def test_validate_step_outputs_rejects_missing_output() -> None:
     step = _step(outputs=["docs", "summary"])
 
     with pytest.raises(ValueError, match="missing outputs"):
-        validate_step_outputs(step, {"docs": "ok"})
+        validate_step_outputs(
+            step,
+            {"outputs": [{"name": "docs", "type": "json", "path": "outputs/docs.json"}]},
+        )
 
 
 def test_validate_step_outputs_accepts_exact_match() -> None:
     step = _step(outputs=["docs", "summary"])
 
-    validate_step_outputs(step, {"docs": "ok", "summary": "ok"})
+    validate_step_outputs(
+        step,
+        {
+            "outputs": [
+                {"name": "docs", "type": "json", "path": "outputs/docs.json"},
+                {"name": "summary", "type": "json", "path": "outputs/summary.json"},
+            ]
+        },
+    )
 
 
 def test_validate_step_outputs_allows_empty_only_when_declared_empty() -> None:
     step = _step(outputs=[])
-    validate_step_outputs(step, {})
+    validate_step_outputs(step, {"outputs": []})
