@@ -135,7 +135,7 @@ steps:
     with pytest.raises(RuntimeError, match="Pipeline execution failed at step 'fail'"):
         run_pipeline(pipeline_path, tmp_path, Mode.DEBUG)
 
-    run_dirs = list((tmp_path / "runs").iterdir())
+    run_dirs = [path for path in (tmp_path / "runs").iterdir() if path.name != ".cache"]
     assert len(run_dirs) == 1
     run_dir = run_dirs[0]
 

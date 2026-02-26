@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -17,11 +18,17 @@ from uuid import uuid4
 import yaml
 
 from agentforge.contracts.models import ArtifactRef, Manifest, Mode, RunConfig, StepResult, StepSpec, StepStatus
+from agentforge.orchestrator.cache import (
+    compute_step_cache_key,
+    load_cache_record,
+    save_cache_record,
+)
 from agentforge.orchestrator.pipeline import load_pipeline
 from agentforge.orchestrator.resolver import resolve_ref
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import init_manifest, register_artifacts, save_manifest
 from agentforge.storage.run_layout import create_run_layout, create_step_dir
+from agentforge.utils.logging import get_step_logger
 
 _WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
@@ -63,8 +70,9 @@ def validate_step_outputs(step: StepSpec, returned: dict[str, Any]) -> None:
 def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) -> str:
     """Run one pipeline sequentially and return generated run_id."""
     pipeline = load_pipeline(pipeline_path)
+    base_path = Path(base_dir)
     run_id = str(uuid4())
-    layout = create_run_layout(base_dir, run_id)
+    layout = create_run_layout(base_path, run_id)
 
     run_config = RunConfig(
         run_id=run_id,
@@ -80,11 +88,45 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
     manifest = init_manifest(layout.manifest_json, run_id=run_id)
     for index, step in enumerate(pipeline.steps):
         step_dir = create_step_dir(layout, index, step.id)
+        step_logger = get_step_logger(step_dir / "logs" / "step.log")
         started_at = _utcnow()
         try:
+            input_artifacts = _resolve_input_artifacts(manifest=manifest, step=step)
+            cache_key = compute_step_cache_key(step=step, mode=mode, input_artifacts=input_artifacts)
+            cached_outputs = _try_load_valid_cached_outputs(
+                base_path=base_path,
+                pipeline_name=pipeline.name,
+                cache_key=cache_key,
+                step=step,
+                step_logger=step_logger,
+            )
+            if cached_outputs is not None:
+                artifacts = _materialize_cached_artifacts(
+                    base_path=base_path,
+                    cached_outputs=cached_outputs,
+                    manifest=manifest,
+                    step_id=step.id,
+                    step_dir=step_dir,
+                    run_dir=layout.run_dir,
+                )
+                step_logger.info("Cache hit for step '%s' with key=%s", step.id, cache_key)
+                step_result = StepResult(
+                    step_id=step.id,
+                    status=StepStatus.SKIPPED,
+                    started_at=started_at,
+                    ended_at=_utcnow(),
+                    metrics={},
+                    outputs=artifacts,
+                )
+                manifest.steps.append(step_result)
+                register_artifacts(manifest, artifacts)
+                save_manifest(layout.manifest_json, manifest)
+                _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
+                continue
+
             step_callable = resolve_ref(step.ref)
             ctx = _build_step_context(
-                manifest=manifest,
+                input_artifacts=input_artifacts,
                 layout=layout.run_dir,
                 run_id=run_id,
                 mode=mode,
@@ -113,6 +155,20 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
             register_artifacts(manifest, artifacts)
             save_manifest(layout.manifest_json, manifest)
             _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
+            cache_outputs = _copy_outputs_into_cache(
+                artifacts=artifacts,
+                base_path=base_path,
+                cache_key=cache_key,
+                pipeline_name=pipeline.name,
+                run_dir=layout.run_dir,
+                step_id=step.id,
+            )
+            save_cache_record(
+                base_dir=base_path,
+                pipeline_name=pipeline.name,
+                cache_key=cache_key,
+                outputs=cache_outputs,
+            )
         except Exception as exc:
             step_result = StepResult(
                 step_id=step.id,
@@ -142,7 +198,7 @@ def _utcnow() -> datetime:
 
 def _build_step_context(
     *,
-    manifest: Manifest,
+    input_artifacts: list[ArtifactRef],
     layout: Path,
     run_id: str,
     mode: Mode,
@@ -150,10 +206,7 @@ def _build_step_context(
     step_dir: Path,
 ) -> dict[str, Any]:
     inputs: dict[str, dict[str, str]] = {}
-    for input_name in step.inputs:
-        artifact = manifest.get_latest_by_name(input_name)
-        if artifact is None:
-            raise KeyError(f"Input artifact not found for step '{step.id}': {input_name}")
+    for input_name, artifact in zip(step.inputs, input_artifacts):
         input_abs = (layout / artifact.path).resolve()
         inputs[input_name] = {
             "name": artifact.name,
@@ -173,6 +226,16 @@ def _build_step_context(
         "config": dict(step.config),
         "inputs": inputs,
     }
+
+
+def _resolve_input_artifacts(*, manifest: Manifest, step: StepSpec) -> list[ArtifactRef]:
+    input_artifacts: list[ArtifactRef] = []
+    for input_name in step.inputs:
+        artifact = manifest.get_latest_by_name(input_name)
+        if artifact is None:
+            raise KeyError(f"Input artifact not found for step '{step.id}': {input_name}")
+        input_artifacts.append(artifact)
+    return input_artifacts
 
 
 def _validate_step_payload(
@@ -258,6 +321,106 @@ def _materialize_step_artifacts(
         existing_names.add(output_name)
 
     return artifacts
+
+
+def _materialize_cached_artifacts(
+    *,
+    base_path: Path,
+    cached_outputs: list[ArtifactRef],
+    manifest: Manifest,
+    step_id: str,
+    step_dir: Path,
+    run_dir: Path,
+) -> list[ArtifactRef]:
+    existing_names = {artifact.name for artifact in manifest.artifacts}
+    artifacts: list[ArtifactRef] = []
+    for cached_output in cached_outputs:
+        if cached_output.name in existing_names:
+            raise ValueError(f"Artifact name already registered in run: {cached_output.name}")
+
+        source_file = (base_path / cached_output.path).resolve()
+        suffix = source_file.suffix
+        dest_rel = f"outputs/{cached_output.name}{suffix}"
+        dest_file = step_dir.joinpath(*PurePosixPath(dest_rel).parts)
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, dest_file)
+
+        run_relative_path = dest_file.resolve().relative_to(run_dir.resolve()).as_posix()
+        artifacts.append(
+            ArtifactRef(
+                name=cached_output.name,
+                type=cached_output.type,
+                path=run_relative_path,
+                sha256=cached_output.sha256,
+                producer_step_id=step_id,
+            )
+        )
+        existing_names.add(cached_output.name)
+    return artifacts
+
+
+def _copy_outputs_into_cache(
+    *,
+    artifacts: list[ArtifactRef],
+    base_path: Path,
+    cache_key: str,
+    pipeline_name: str,
+    run_dir: Path,
+    step_id: str,
+) -> list[ArtifactRef]:
+    cache_dir = base_path / "runs" / ".cache" / pipeline_name / cache_key
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    cache_outputs: list[ArtifactRef] = []
+    for artifact in artifacts:
+        source_file = (run_dir / artifact.path).resolve()
+        suffix = source_file.suffix
+        cache_file = cache_dir / f"{artifact.name}{suffix}"
+        shutil.copy2(source_file, cache_file)
+        cache_outputs.append(
+            ArtifactRef(
+                name=artifact.name,
+                type=artifact.type,
+                path=cache_file.resolve().relative_to(base_path.resolve()).as_posix(),
+                sha256=artifact.sha256,
+                producer_step_id=step_id,
+            )
+        )
+    return cache_outputs
+
+
+def _try_load_valid_cached_outputs(
+    *,
+    base_path: Path,
+    pipeline_name: str,
+    cache_key: str,
+    step: StepSpec,
+    step_logger: Any,
+) -> list[ArtifactRef] | None:
+    try:
+        cached_outputs = load_cache_record(base_path, pipeline_name, cache_key)
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        step_logger.warning("Corrupted cache record for step '%s': %s", step.id, exc)
+        return None
+
+    if cached_outputs is None:
+        return None
+
+    names = [artifact.name for artifact in cached_outputs]
+    if set(names) != set(step.outputs) or len(names) != len(set(names)):
+        step_logger.warning("Cache record output names invalid for step '%s'", step.id)
+        return None
+
+    for cached_output in cached_outputs:
+        source = (base_path / cached_output.path).resolve()
+        if not source.is_file():
+            step_logger.warning("Cache miss due to missing cached file for step '%s': %s", step.id, source)
+            return None
+        if sha256_file(source) != cached_output.sha256:
+            step_logger.warning("Cache miss due to sha mismatch for step '%s': %s", step.id, source)
+            return None
+
+    return cached_outputs
 
 
 def _resolve_output_file(*, step_dir: Path, relative_path: str) -> Path:

@@ -331,7 +331,7 @@ Acceptance criteria:
 
 ## 2.8 Cache Integration (Full Skip Behavior)
 
-- 2.8.1 Before executing step:
+- [X] 2.8.1 Before executing step:
     - Compute cache key
     - If hit:
         - Verify cached files exist
@@ -343,10 +343,10 @@ Acceptance criteria:
     - If miss:
         - Execute step normally
         - Write cache record on success
-- 2.8.2 Ensure:
+- [X] 2.8.2 Ensure:
     - Failed steps never cached
     - Corrupted cache treated as miss
-- 2.8.3 Unit tests:
+- [X] 2.8.3 Unit tests:
     - Running pipeline twice reuses cached outputs
     - Second run marks cached steps as skipped
     - Corrupted cache triggers re-execution
