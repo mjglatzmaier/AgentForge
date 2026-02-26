@@ -260,7 +260,7 @@ Acceptance criteria:
 
 ## 2.5 Sequential Step Execution (No Cache)
 
-- 2.5.1 Extend runner to:
+- [X] 2.5.1 Extend runner to:
     - Iterate steps in order
     - Create zero-padded step directory
     - Write meta.json with:
@@ -276,14 +276,14 @@ Acceptance criteria:
     - Compute sha256 for each output
     - Register artifacts in manifest
     - Persist manifest after each step
-- 2.5.2 Define failure behavior:
+- [X] 2.5.2 Define failure behavior:
     - On exception:
         - status = failed
         - meta.json written
         - manifest updated with StepResult
         - pipeline halts
     - No artifacts registered on failure
-- 2.5.3 Unit tests:
+- [X] 2.5.3 Unit tests:
     - Two-step fake pipeline executes in order
     - meta.json valid for each step
     - manifest contains expected artifacts

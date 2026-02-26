@@ -12,11 +12,7 @@ def _write_pipeline(path: Path) -> None:
     path.write_text(
         """
 name: skeleton_pipeline
-steps:
-  - id: fetch
-    kind: tool
-    ref: tools.fetch:run
-    outputs: [docs]
+steps: []
 """.strip(),
         encoding="utf-8",
     )
