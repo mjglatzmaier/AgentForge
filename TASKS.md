@@ -298,12 +298,12 @@ Acceptance criteria:
 
 ## 2.6 Cache Key Computation (No Skip Yet)
 
-- 2.6.1 Implement compute_step_cache_key(step, mode, input_artifacts)
+- [X] 2.6.1 Implement compute_step_cache_key(step, mode, input_artifacts)
     - Stable hash of:
         - step spec (id/kind/ref/config/inputs/outputs)
         - mode
         - input artifact sha256 values (sorted)
-- 2.6.2 Unit tests:
+- [X] 2.6.2 Unit tests:
     - Same inputs produce same key
     - Different config changes key
     - Different input hash changes key
