@@ -378,15 +378,15 @@ Acceptance criteria:
 
 ## Phase 2.9: Step Execution Contract Formalization
 
-- 2.9.0 Define strict MVP tool contract:
+- [X] 2.9.0 Define strict MVP tool contract:
     - Callable signature:
         (context: dict) -> dict[str, Any]
     - Returned keys must match StepSpec.outputs.
     - Returning undeclared outputs raises error.
     - Missing declared outputs raises error.
-- 2.9.1 Document contract in docs/architecture.md.
-- 2.9.2 Add validation layer in runner before artifact registration.
-- 2.9.3 Add tests:
+- [X] 2.9.1 Document contract in docs/architecture.md.
+- [X] 2.9.2 Add validation layer in runner before artifact registration.
+- [X] 2.9.3 Add tests:
     - Undeclared output rejected.
     - Missing declared output rejected.
     - Empty output allowed only if outputs list empty.
