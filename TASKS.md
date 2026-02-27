@@ -358,14 +358,14 @@ Acceptance criteria:
 
 ## Phase 2.8: Artifact Identity and Naming Rules
 
-- 2.8.0 Define artifact naming invariant:
+- [X] 2.8.0 Define artifact naming invariant:
     - ArtifactRef.name must be globally unique within a run.
     - producer_step_id stored as metadata only.
     - Manifest lookup by name must be deterministic.
-- 2.8.1 Enforce:
+- [X] 2.8.1 Enforce:
     - register_artifact rejects duplicate artifact names.
     - Artifact paths must be relative to run root.
-- 2.8.2 Add tests:
+- [X] 2.8.2 Add tests:
     - Duplicate artifact names raise error.
     - Absolute paths rejected.
     - Manifest round-trip preserves relative paths.
