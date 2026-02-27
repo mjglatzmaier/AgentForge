@@ -358,14 +358,14 @@ Acceptance criteria:
 
 ## Phase 2.8: Artifact Identity and Naming Rules
 
-- 2.8.0 Define artifact naming invariant:
+- [X] 2.8.0 Define artifact naming invariant:
     - ArtifactRef.name must be globally unique within a run.
     - producer_step_id stored as metadata only.
     - Manifest lookup by name must be deterministic.
-- 2.8.1 Enforce:
+- [X] 2.8.1 Enforce:
     - register_artifact rejects duplicate artifact names.
     - Artifact paths must be relative to run root.
-- 2.8.2 Add tests:
+- [X] 2.8.2 Add tests:
     - Duplicate artifact names raise error.
     - Absolute paths rejected.
     - Manifest round-trip preserves relative paths.
@@ -378,15 +378,15 @@ Acceptance criteria:
 
 ## Phase 2.9: Step Execution Contract Formalization
 
-- 2.9.0 Define strict MVP tool contract:
+- [X] 2.9.0 Define strict MVP tool contract:
     - Callable signature:
         (context: dict) -> dict[str, Any]
     - Returned keys must match StepSpec.outputs.
     - Returning undeclared outputs raises error.
     - Missing declared outputs raises error.
-- 2.9.1 Document contract in docs/architecture.md.
-- 2.9.2 Add validation layer in runner before artifact registration.
-- 2.9.3 Add tests:
+- [X] 2.9.1 Document contract in docs/architecture.md.
+- [X] 2.9.2 Add validation layer in runner before artifact registration.
+- [X] 2.9.3 Add tests:
     - Undeclared output rejected.
     - Missing declared output rejected.
     - Empty output allowed only if outputs list empty.

@@ -44,9 +44,14 @@ Each `StepSpec.ref` resolves to a Python callable with signature:
 
 `(context: dict) -> dict[str, Any]`
 
-The orchestrator validates step output keys against `StepSpec.outputs` before any artifact handling:
+Each step return payload must be a dict with:
 
- - Returned keys must exactly match declared output names.
+ - `outputs`: list of objects with keys `name`, `type`, `path`
+ - `metrics`: optional dict with scalar JSON values (`int | float | str`)
+
+The orchestrator validates output names against `StepSpec.outputs` before any artifact registration:
+
+ - Returned output names must exactly match declared output names.
  - Undeclared outputs are rejected.
  - Missing declared outputs are rejected.
  - Empty output is valid only when `StepSpec.outputs` is empty.

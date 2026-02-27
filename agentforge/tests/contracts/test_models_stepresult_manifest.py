@@ -15,36 +15,35 @@ def test_manifest_artifact_lookup() -> None:
     digest = ArtifactRef(
         name="digest_md",
         type="markdown",
-        path="runs/run-001/steps/04_render/outputs/digest.md",
+        path="steps/04_render/outputs/digest.md",
         sha256="aaa111",
         producer_step_id="render",
     )
     docs = ArtifactRef(
         name="docs_json",
         type="json",
-        path="runs/run-001/steps/02_normalize/outputs/docs.json",
+        path="steps/02_normalize/outputs/docs.json",
         sha256="bbb222",
         producer_step_id="normalize",
     )
     manifest = Manifest(run_id="run-001", artifacts=[docs, digest])
 
-    # Compound key lookup
-    assert manifest.get_artifact("render", "digest_md") == digest
-    assert manifest.get_artifact("normalize", "docs_json") == docs
+    # Name-based lookup
+    assert manifest.get_artifact("digest_md") == digest
+    assert manifest.get_artifact("docs_json") == docs
 
     # Missing cases
-    assert manifest.get_artifact("render", "missing") is None
-    assert manifest.get_artifact("missing_step", "digest_md") is None
+    assert manifest.get_artifact("missing") is None
 
     # require_artifact should succeed
-    assert manifest.require_artifact("normalize", "docs_json") == docs
+    assert manifest.require_artifact("docs_json") == docs
 
 
 def test_manifest_require_artifact_raises_on_missing() -> None:
     manifest = Manifest(run_id="run-002")
 
     with pytest.raises(KeyError):
-        manifest.require_artifact("normalize", "missing_artifact")
+        manifest.require_artifact("missing_artifact")
 
 
 def test_step_result_fields_validate() -> None:

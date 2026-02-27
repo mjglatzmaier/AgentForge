@@ -1,15 +1,20 @@
 """Manifest persistence and artifact index helpers.
 
-Artifact identity is (producer_step_id, name). `manifest.json` is expected to be
-valid JSON whenever present; empty files are treated as an initialization error.
+Artifact identity is global by `name` within one run; `producer_step_id` is
+metadata only. `manifest.json` is expected to be valid JSON whenever present;
+empty files are treated as an initialization error.
 """
 
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
 from pathlib import Path
 from typing import Iterable
 
 from agentforge.contracts.models import ArtifactRef, Manifest
+
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
 
 def init_manifest(path: str | Path, run_id: str) -> Manifest:
@@ -49,11 +54,10 @@ def save_manifest(path: str | Path, manifest: Manifest) -> None:
 
 
 def register_artifact(manifest: Manifest, artifact: ArtifactRef) -> None:
-    """Register one artifact; reject duplicate compound keys."""
-    if lookup_artifact(manifest, artifact.producer_step_id, artifact.name) is not None:
-        raise ValueError(
-            f"Artifact already registered: ({artifact.producer_step_id}, {artifact.name})"
-        )
+    """Register one artifact; reject duplicate logical names and bad paths."""
+    if lookup_artifact(manifest, artifact.name) is not None:
+        raise ValueError(f"Artifact already registered: {artifact.name}")
+    _validate_relative_run_path(artifact.path)
     manifest.artifacts.append(artifact)
 
 
@@ -63,25 +67,33 @@ def register_artifacts(manifest: Manifest, artifacts: Iterable[ArtifactRef]) -> 
         register_artifact(manifest, artifact)
 
 
-def lookup_artifact(manifest: Manifest, producer_step_id: str, name: str) -> ArtifactRef | None:
-    """Lookup artifact by compound identity key (producer_step_id, name)."""
+def lookup_artifact(manifest: Manifest, name: str) -> ArtifactRef | None:
+    """Lookup artifact by global artifact name."""
     for artifact in manifest.artifacts:
-        if artifact.producer_step_id == producer_step_id and artifact.name == name:
+        if artifact.name == name:
             return artifact
     return None
 
 
-def require_artifact(manifest: Manifest, producer_step_id: str, name: str) -> ArtifactRef:
+def require_artifact(manifest: Manifest, name: str) -> ArtifactRef:
     """Strict variant of lookup_artifact that raises KeyError on miss."""
-    artifact = lookup_artifact(manifest, producer_step_id, name)
+    artifact = lookup_artifact(manifest, name)
     if artifact is None:
-        raise KeyError(f"Artifact not found: ({producer_step_id}, {name})")
+        raise KeyError(f"Artifact not found: {name}")
     return artifact
 
 
 def lookup_latest_by_name(manifest: Manifest, name: str) -> ArtifactRef | None:
-    """Return the most recently registered artifact matching a logical name."""
-    for artifact in reversed(manifest.artifacts):
-        if artifact.name == name:
-            return artifact
-    return None
+    """Return artifact by logical name (legacy alias for lookup_artifact)."""
+    return lookup_artifact(manifest, name)
+
+
+def _validate_relative_run_path(path: str) -> None:
+    if not path:
+        raise ValueError("Artifact path must be non-empty")
+    if path.startswith("/") or _WINDOWS_DRIVE_PREFIX.match(path):
+        raise ValueError(f"Artifact path must be relative to run root: {path}")
+
+    posix = PurePosixPath(path)
+    if ".." in posix.parts:
+        raise ValueError(f"Artifact path must not contain '..': {path}")

@@ -50,3 +50,9 @@ def test_validate_step_outputs_accepts_exact_match() -> None:
 def test_validate_step_outputs_allows_empty_only_when_declared_empty() -> None:
     step = _step(outputs=[])
     validate_step_outputs(step, {"outputs": []})
+
+
+def test_validate_step_outputs_rejects_empty_when_declared_outputs_exist() -> None:
+    step = _step(outputs=["docs"])
+    with pytest.raises(ValueError, match="missing outputs"):
+        validate_step_outputs(step, {"outputs": []})
