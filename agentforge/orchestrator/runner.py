@@ -23,8 +23,8 @@ from agentforge.orchestrator.cache import (
     load_cache_record,
     save_cache_record,
 )
+from agentforge.orchestrator.executor import InProcExecutor, StepExecutionResult, StepExecutor
 from agentforge.orchestrator.pipeline import load_pipeline
-from agentforge.orchestrator.resolver import resolve_ref
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import init_manifest, register_artifacts, save_manifest
 from agentforge.storage.run_layout import create_run_layout, create_step_dir
@@ -67,12 +67,18 @@ def validate_step_outputs(step: StepSpec, returned: dict[str, Any]) -> None:
         raise ValueError(f"Step '{step.id}' output contract violation: {detail}")
 
 
-def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) -> str:
+def run_pipeline(
+    pipeline_path: str | Path,
+    base_dir: str | Path,
+    mode: Mode,
+    executor: StepExecutor | None = None,
+) -> str:
     """Run one pipeline sequentially and return generated run_id."""
     pipeline = load_pipeline(pipeline_path)
     base_path = Path(base_dir)
     run_id = str(uuid4())
     layout = create_run_layout(base_path, run_id)
+    step_executor = executor or InProcExecutor()
 
     run_config = RunConfig(
         run_id=run_id,
@@ -109,6 +115,7 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                     step_dir=step_dir,
                     run_dir=layout.run_dir,
                 )
+                _assert_artifact_hashes(artifacts=artifacts, run_dir=layout.run_dir)
                 step_logger.info("Cache hit for step '%s' with key=%s", step.id, cache_key)
                 step_result = StepResult(
                     step_id=step.id,
@@ -124,7 +131,6 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
                 continue
 
-            step_callable = resolve_ref(step.ref)
             ctx = _build_step_context(
                 input_artifacts=input_artifacts,
                 layout=layout.run_dir,
@@ -133,7 +139,14 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 step=step,
                 step_dir=step_dir,
             )
-            returned = step_callable(ctx)
+            if not bool(step.config.get("expose_mode_to_tool", False)) and "mode" in ctx:
+                raise AssertionError(
+                    f"Mode must not be passed to step '{step.id}' unless explicitly requested."
+                )
+            execution_result = step_executor.execute(step=step, context=ctx)
+            if not isinstance(execution_result, StepExecutionResult):
+                raise TypeError("StepExecutor must return StepExecutionResult.")
+            returned = execution_result.raw_output
             outputs_payload, metrics = _validate_step_payload(step=step, returned=returned)
             artifacts = _materialize_step_artifacts(
                 outputs_payload=outputs_payload,
@@ -142,26 +155,13 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 step_dir=step_dir,
                 run_dir=layout.run_dir,
             )
-            cache_outputs = _copy_outputs_into_cache(
-                artifacts=artifacts,
-                base_path=base_path,
-                cache_key=cache_key,
-                pipeline_name=pipeline.name,
-                run_dir=layout.run_dir,
-                step_id=step.id,
-            )
-            save_cache_record(
-                base_dir=base_path,
-                pipeline_name=pipeline.name,
-                cache_key=cache_key,
-                outputs=cache_outputs,
-            )
+            _assert_artifact_hashes(artifacts=artifacts, run_dir=layout.run_dir)
 
             step_result = StepResult(
                 step_id=step.id,
                 status=StepStatus.SUCCESS,
-                started_at=started_at,
-                ended_at=_utcnow(),
+                started_at=execution_result.started_at,
+                ended_at=execution_result.ended_at,
                 metrics=metrics,
                 outputs=artifacts,
             )
@@ -169,6 +169,23 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
             register_artifacts(manifest, artifacts)
             save_manifest(layout.manifest_json, manifest)
             _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
+            try:
+                cache_outputs = _copy_outputs_into_cache(
+                    artifacts=artifacts,
+                    base_path=base_path,
+                    cache_key=cache_key,
+                    pipeline_name=pipeline.name,
+                    run_dir=layout.run_dir,
+                    step_id=step.id,
+                )
+                save_cache_record(
+                    base_dir=base_path,
+                    pipeline_name=pipeline.name,
+                    cache_key=cache_key,
+                    outputs=cache_outputs,
+                )
+            except Exception as cache_exc:
+                step_logger.warning("Cache write skipped for step '%s': %s", step.id, cache_exc)
         except Exception as exc:
             step_result = StepResult(
                 step_id=step.id,
@@ -217,15 +234,17 @@ def _build_step_context(
             "abs_path": str(input_abs),
         }
 
-    return {
+    context: dict[str, Any] = {
         "run_id": run_id,
         "run_dir": str(layout),
-        "mode": mode.value,
         "step_id": step.id,
         "step_dir": str(step_dir),
         "config": dict(step.config),
         "inputs": inputs,
     }
+    if bool(step.config.get("expose_mode_to_tool", False)):
+        context["mode"] = mode.value
+    return context
 
 
 def _resolve_input_artifacts(*, manifest: Manifest, step: StepSpec) -> list[ArtifactRef]:
@@ -321,6 +340,16 @@ def _materialize_step_artifacts(
         existing_names.add(output_name)
 
     return artifacts
+
+
+def _assert_artifact_hashes(*, artifacts: list[ArtifactRef], run_dir: Path) -> None:
+    for artifact in artifacts:
+        artifact_file = (run_dir / artifact.path).resolve()
+        actual_sha = sha256_file(artifact_file)
+        if actual_sha != artifact.sha256:
+            raise ValueError(
+                f"Artifact sha256 mismatch for '{artifact.name}': expected {artifact.sha256}, got {actual_sha}"
+            )
 
 
 def _materialize_cached_artifacts(

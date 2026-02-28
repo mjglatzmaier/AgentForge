@@ -39,7 +39,10 @@ def save_cache_record(
     """Store one cache record and return its file path."""
     cache_path = _cache_record_path(base_dir, pipeline_name, cache_key)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"outputs": [artifact.model_dump(mode="json") for artifact in outputs]}
+    payload = {
+        "pipeline_name": pipeline_name,
+        "outputs": [artifact.model_dump(mode="json") for artifact in outputs],
+    }
     cache_path.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
     return cache_path
 
@@ -53,7 +56,13 @@ def load_cache_record(
         return None
 
     payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    if payload.get("pipeline_name") != pipeline_name:
+        raise ValueError(
+            f"Cache record pipeline_name mismatch: expected {pipeline_name}, got {payload.get('pipeline_name')}"
+        )
     outputs_raw = payload.get("outputs", [])
+    if not isinstance(outputs_raw, list):
+        raise ValueError("Cache record outputs must be a list")
     return [ArtifactRef.model_validate(output) for output in outputs_raw]
 
 
