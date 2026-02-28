@@ -26,3 +26,8 @@ def test_resolve_ref_rejects_missing_function() -> None:
 def test_resolve_ref_rejects_non_callable_object() -> None:
     with pytest.raises(TypeError, match="not callable"):
         resolve_ref("math:pi")
+
+
+def test_resolve_ref_resolves_agents_step_callable() -> None:
+    resolved = resolve_ref("agents.research_digest.src.steps:fetch_arxiv")
+    assert callable(resolved)

@@ -20,6 +20,32 @@ from agentforge.providers.base import (
 )
 
 
+def _openai_strictify_schema(schema: Any) -> Any:
+    """
+    OpenAI strict json_schema requirements:
+      - For every object: additionalProperties must be false
+      - For every object: required must exist and include every key in properties
+    """
+    if isinstance(schema, dict):
+        # recurse
+        for k, v in list(schema.items()):
+            schema[k] = _openai_strictify_schema(v)
+
+        if schema.get("type") == "object" or "properties" in schema:
+            props = schema.get("properties")
+            if isinstance(props, dict):
+                # disallow extra keys
+                schema["additionalProperties"] = False
+                # require every key that appears in properties
+                schema["required"] = list(props.keys())
+
+        return schema
+
+    if isinstance(schema, list):
+        return [_openai_strictify_schema(x) for x in schema]
+
+    return schema
+
 class OpenAIProvider(BaseProvider):
     """Minimal OpenAI chat-completions provider for structured output."""
 
@@ -43,18 +69,31 @@ class OpenAIProvider(BaseProvider):
         model_name = request.model or self._default_model
         timeout_s = request.timeout_s if request.timeout_s is not None else 30.0
         response_model = request.response_model
-        schema_json = response_model.model_json_schema()
+
+        # Keep prompts small; don't inline the schema here.
         system_prompt = request.system_prompt or ""
-        strict_instruction = (
-            "Return ONLY valid JSON that matches this schema exactly. "
-            f"Schema: {json.dumps(schema_json, sort_keys=True)}"
-        )
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": "\n\n".join(part for part in [system_prompt, strict_instruction] if part)},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": request.prompt},
         ]
 
-        payload: dict[str, Any] = {"model": model_name, "messages": messages}
+        schema_json = _openai_strictify_schema(response_model.model_json_schema())
+
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+
+            # Structured Outputs (schema adherence)
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": schema_json,
+                    "strict": True,
+                },
+            },
+        }
+
         if request.temperature is not None:
             payload["temperature"] = request.temperature
         if request.max_output_tokens is not None:
@@ -87,8 +126,24 @@ class OpenAIProvider(BaseProvider):
 
         latency_ms = int((perf_counter() - started) * 1000)
         body = response.json()
+
+        # Helpful diagnostics for truncation
+        try:
+            finish_reason = body.get("choices", [{}])[0].get("finish_reason")
+        except Exception:
+            finish_reason = None
+
         raw_text = _extract_openai_text(body)
-        parsed = _parse_and_validate(raw_text, response_model=response_model, provider=self.name)
+
+        # If still malformed, include finish_reason + tail excerpt for debugging
+        try:
+            parsed = _parse_and_validate(raw_text, response_model=response_model, provider=self.name)
+        except ProviderValidationError as exc:
+            tail = raw_text[-300:] if isinstance(raw_text, str) else ""
+            raise ProviderValidationError(
+                f"{exc}. finish_reason={finish_reason}. tail_excerpt={tail}"
+            ) from exc
+
         usage = _extract_usage(body)
         request_id = body.get("id") or response.headers.get("x-request-id")
 
