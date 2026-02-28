@@ -605,23 +605,131 @@ Phase 3 acceptance criteria:
 - Pipeline produces both a markdown digest and a JSON digest with no LLM calls.
 - All produced artifacts are registered in manifest.json with sha256 and correct relative paths.
 
-## Phase 4: LLM synthesis (Claude + GPT-5.2) with structured output
-- 4.0 Define provider interface in agentforge/providers/base.py:
-    - generate_json(prompt, schema) -> BaseModel
-- 4.1 Implement OpenAI + Claude clients (stubs initially; env-based API keys).
-- 4.2 Add synthesize step:
-    - input: top-k docs
-    - output: Digest JSON (Pydantic)
-    - enforce citation doc_ids in every bullet
-- 4.3 Add verifier step (optional in v0.1):
-    - checks that each claim has citations
-    - flags uncited claims
-- 4.4 Update pipeline to:
-    fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> synthesize -> render
+## Phase 4: LLM synthesis with structured output (provider-agnostic)
+
+Goal:
+Add a minimal provider layer that can produce validated Pydantic outputs with robust error handling and traceable metadata.
+
+- [X] 4.0 Provider interface (minimal, extensible)
+
+Implement in `agentforge/providers/base.py`:
+
+- [X] Define a request/response API:
+
+  - `LlmRequest` (Pydantic or dataclass):
+    - `system_prompt: str | None`
+    - `prompt: str`
+    - `response_model: type[BaseModel]`  (Pydantic model class)
+    - `model: str | None`               (provider-specific model id)
+    - `temperature: float | None`
+    - `max_output_tokens: int | None`
+    - `seed: int | None`                (optional; best-effort)
+    - `timeout_s: float | None`
+    - `metadata: dict[str, Any] = {}`   (freeform: run_id, step_id, etc.)
+
+  - `LlmResult[T]`:
+    - `parsed: T`                       (validated Pydantic instance)
+    - `raw_text: str`                   (raw assistant text or JSON string)
+    - `provider: str`
+    - `model: str`
+    - `usage: dict[str, int] = {}`      (prompt_tokens, completion_tokens if available)
+    - `latency_ms: int | None`
+    - `request_id: str | None`
+    - `warnings: list[str] = []`
+
+- [X] Define `BaseProvider`:
+  - `name: str`
+  - `generate(request: LlmRequest) -> LlmResult[BaseModel]`
+  - Helper: `generate_json(prompt, response_model, **kwargs)` as ergonomic wrapper
+
+- [X] Define provider errors:
+  - `ProviderError` base
+  - `ProviderTransientError` (retryable)
+  - `ProviderPermanentError` (non-retryable)
+  - `ProviderValidationError` (model output failed Pydantic validation)
 
 Acceptance criteria:
-- Digest JSON conforms to schema.
-- Render includes citations referencing doc ids.
+- Provider interface can return validated Pydantic outputs plus metadata.
+- Errors are typed so retry logic can be generic.
+
+---
+
+### 4.1 Provider implementations (stubs first; env-based keys)
+
+Implement in:
+- `agentforge/providers/openai_client.py`
+- `agentforge/providers/claude_client.py`
+
+Requirements:
+- Read API keys from env (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- Implement `generate()` using the provider’s chat API.
+- Return `LlmResult` with best-effort `usage`, `model`, `request_id`.
+- For structured output:
+  - ask the model to output STRICT JSON matching the schema.
+  - parse JSON and validate via `response_model.model_validate(...)`.
+  - raise `ProviderValidationError` on validation failure (include raw output excerpt).
+
+Acceptance criteria:
+- Both providers can be instantiated and can produce a validated response for a tiny demo schema.
+- Implementation remains provider-agnostic above this layer.
+
+---
+
+### 4.2 LLM-backed synthesize step (Digest JSON)
+
+Implement `agents/research_digest/src/steps.py:synthesize_digest` (or similar):
+
+Inputs:
+- top-k normalized docs artifact (JSON list of Doc models)
+
+Outputs:
+- `digest.json` (validated Pydantic Digest model)
+- (optional debug) `synthesis_prompt.txt`, `raw_response.txt` in debug mode
+
+Rules:
+- Every bullet/claim in the Digest MUST include `citations: list[str]` referencing `doc_id`s.
+- Enforce this with:
+  - prompt instruction + schema requiring citations for each bullet
+  - (optional) post-parse validation that citations are non-empty + valid ids
+
+Acceptance criteria:
+- Step produces `digest.json` conforming to schema.
+- All bullets include at least one citation doc_id present in the input set.
+
+---
+
+### 4.3 Verifier step (optional in v0.1, but recommended)
+
+Implement `verify_digest_citations`:
+
+Inputs:
+- `digest.json`
+- docs list (for valid doc_ids)
+
+Outputs:
+- `citation_report.json` with:
+  - total_bullets
+  - bullets_missing_citations
+  - invalid_doc_id_citations
+  - pass/fail boolean
+
+Behavior:
+- Does NOT modify digest.
+- Sets step status to success but records failures in metrics/report (or optionally fails in eval mode).
+
+Acceptance criteria:
+- Verifier correctly detects missing/invalid citations.
+
+---
+
+### 4.4 Update pipeline
+
+Update `pipelines/research_digest.yaml` to:
+`fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> synthesize -> render`
+(and optionally `-> verify -> render` depending on your ordering preference)
+
+Acceptance criteria:
+- Running the pipeline produces a rendered markdown digest that includes citations referencing doc ids.
 
 ## Phase 5: Evaluation module MVP (separate)
 - 5.0 Implement eval runner (eval/core/runner.py):
