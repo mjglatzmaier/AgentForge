@@ -547,13 +547,13 @@ Acceptance criteria:
 
 ---
 
-### 3.2 Working pipeline YAML (end-to-end execution)
+- [X] 3.2 Working pipeline YAML (end-to-end execution)
 
 Provide/validate `pipelines/research_digest.yaml` that runs:
 
 `fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render`
 
-- 3.2.1 Pipeline YAML requirements:
+- [X] 3.2.1 Pipeline YAML requirements:
   - name: "research_digest"
   - tool steps reference wrapper refs (not raw tool modules)
   - inputs/outputs declared for each step and match wrapper return keys exactly
@@ -564,10 +564,10 @@ Provide/validate `pipelines/research_digest.yaml` that runs:
     - ranking keywords
     - output filenames
 
-- 3.2.2 Add example pipeline config:
+- [X] 3.2.2 Add example pipeline config:
   - `examples/research_digest.local.yaml` tuned for local dev (small doc counts)
 
-- 3.2.3 Add integration test:
+- [X] 3.2.3 Add integration test:
   - Run orchestrator on the pipeline with tmp_path base_dir
   - Assert:
     - run directory created with steps
