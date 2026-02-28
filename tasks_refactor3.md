@@ -197,7 +197,7 @@ Acceptance criteria:
 
 ## Phase 1 — Control Plane v0 (Batch DAG + Event Log)
 
-- [ ] 1.1 Implement `TriggerSpec`:
+- [X] 1.1 Implement `TriggerSpec`:
   - `kind: manual|schedule|event`
   - `schedule: cron|None`
   - `event_type: str|None`

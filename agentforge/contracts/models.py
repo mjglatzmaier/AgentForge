@@ -34,6 +34,57 @@ class StepStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+class TriggerKind(str, Enum):
+    """Trigger type for control-plane runs."""
+
+    MANUAL = "manual"
+    SCHEDULE = "schedule"
+    EVENT = "event"
+
+
+class TriggerSpec(BaseModel):
+    """Control-plane trigger metadata snapshot for a run."""
+
+    kind: TriggerKind
+    schedule: str | None = None
+    event_type: str | None = None
+    source: str | None = None
+    request_artifact: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("schedule", "event_type", "source", "request_artifact")
+    @classmethod
+    def validate_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Optional trigger fields must be non-empty when provided.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_trigger_fields(self) -> "TriggerSpec":
+        if self.kind is TriggerKind.SCHEDULE:
+            if self.schedule is None:
+                raise ValueError("schedule is required when kind='schedule'.")
+            if self.event_type is not None:
+                raise ValueError("event_type is only allowed when kind='event'.")
+            return self
+
+        if self.kind is TriggerKind.EVENT:
+            if self.event_type is None:
+                raise ValueError("event_type is required when kind='event'.")
+            if self.schedule is not None:
+                raise ValueError("schedule is only allowed when kind='schedule'.")
+            return self
+
+        if self.schedule is not None:
+            raise ValueError("schedule is only allowed when kind='schedule'.")
+        if self.event_type is not None:
+            raise ValueError("event_type is only allowed when kind='event'.")
+        return self
+
+
 class RunConfig(BaseModel):
     """Immutable run metadata captured at pipeline start."""
 
