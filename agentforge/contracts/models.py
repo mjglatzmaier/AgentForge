@@ -85,30 +85,59 @@ class TriggerSpec(BaseModel):
         return self
 
 
+class ControlNodeState(str, Enum):
+    """Lifecycle state for a control-plane node."""
+
+    PENDING = "pending"
+    READY = "ready"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+
+
 class ControlNode(BaseModel):
-    """Minimal DAG node descriptor for control-plan validation."""
+    """Control-plane node contract for execution planning."""
 
     node_id: str
+    agent_id: str
+    operation: str
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
     depends_on: list[str] = Field(default_factory=list)
+    state: ControlNodeState = ControlNodeState.PENDING
+    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    timeout_s: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("node_id")
+    @field_validator("node_id", "agent_id", "operation")
     @classmethod
-    def validate_node_id(cls, value: str) -> str:
+    def validate_non_empty_fields(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("node_id must be non-empty.")
+            raise ValueError("ControlNode string fields must be non-empty.")
         return normalized
 
-    @field_validator("depends_on")
+    @field_validator("inputs", "outputs", "depends_on")
     @classmethod
-    def validate_depends_on(cls, value: list[str]) -> list[str]:
+    def validate_string_lists(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
-        for dependency in value:
-            dep_id = dependency.strip()
-            if not dep_id:
-                raise ValueError("depends_on entries must be non-empty.")
-            normalized.append(dep_id)
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("ControlNode list entries must be non-empty.")
+            normalized.append(normalized_item)
         return normalized
+
+    @field_validator("timeout_s")
+    @classmethod
+    def validate_timeout(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError("timeout_s must be > 0 when provided.")
+        return value
 
 
 class ControlPlan(BaseModel):

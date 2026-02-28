@@ -211,7 +211,7 @@ Acceptance criteria:
   - `policy_snapshot`
   - `trigger: TriggerSpec`
   - dependencies via `depends_on` only; cycles rejected
-- [ ] 1.3 Implement `ControlNode`:
+- [X] 1.3 Implement `ControlNode`:
   - `node_id`, `agent_id`, `operation`, `inputs`, `outputs`, `depends_on`
   - `state` enum (pending/ready/running/succeeded/failed/paused/cancelled)
   - `retry_policy`, `timeout_s`, `metadata`

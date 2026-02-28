@@ -8,6 +8,15 @@ def _manual_trigger() -> TriggerSpec:
     return TriggerSpec(kind=TriggerKind.MANUAL, source="cli")
 
 
+def _node(node_id: str, *, depends_on: list[str] | None = None) -> ControlNode:
+    return ControlNode(
+        node_id=node_id,
+        agent_id="agent.digest",
+        operation="pipeline",
+        depends_on=list(depends_on or []),
+    )
+
+
 def test_control_plan_accepts_valid_dependency_dag() -> None:
     plan = ControlPlan(
         plan_id="plan-1",
@@ -15,9 +24,9 @@ def test_control_plan_accepts_valid_dependency_dag() -> None:
         policy_snapshot={"terminal_access": "restricted"},
         trigger=_manual_trigger(),
         nodes=[
-            ControlNode(node_id="ingest"),
-            ControlNode(node_id="normalize", depends_on=["ingest"]),
-            ControlNode(node_id="summarize", depends_on=["normalize"]),
+            _node("ingest"),
+            _node("normalize", depends_on=["ingest"]),
+            _node("summarize", depends_on=["normalize"]),
         ],
     )
 
@@ -29,7 +38,7 @@ def test_control_plan_rejects_duplicate_node_ids() -> None:
         ControlPlan(
             plan_id="plan-dup",
             trigger=_manual_trigger(),
-            nodes=[ControlNode(node_id="a"), ControlNode(node_id="a")],
+            nodes=[_node("a"), _node("a")],
         )
 
 
@@ -38,7 +47,7 @@ def test_control_plan_rejects_unknown_dependency() -> None:
         ControlPlan(
             plan_id="plan-missing",
             trigger=_manual_trigger(),
-            nodes=[ControlNode(node_id="a", depends_on=["b"])],
+            nodes=[_node("a", depends_on=["b"])],
         )
 
 
@@ -48,8 +57,8 @@ def test_control_plan_rejects_dependency_cycle() -> None:
             plan_id="plan-cycle",
             trigger=_manual_trigger(),
             nodes=[
-                ControlNode(node_id="a", depends_on=["b"]),
-                ControlNode(node_id="b", depends_on=["a"]),
+                _node("a", depends_on=["b"]),
+                _node("b", depends_on=["a"]),
             ],
         )
 
@@ -61,8 +70,8 @@ def test_control_plan_serialization_is_stable() -> None:
         "policy_snapshot": {"mode": "prod"},
         "trigger": _manual_trigger(),
         "nodes": [
-            ControlNode(node_id="a"),
-            ControlNode(node_id="b", depends_on=["a"]),
+            _node("a"),
+            _node("b", depends_on=["a"]),
         ],
     }
     plan_a = ControlPlan(**kwargs)
