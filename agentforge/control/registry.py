@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -31,6 +33,31 @@ class AgentRegistry:
             return []
         agent_ids = self.capability_index.get(capability_key, ())
         return [self.agents_by_id[agent_id] for agent_id in agent_ids]
+
+
+def export_registry_snapshot(run_dir: str | Path, registry: AgentRegistry) -> Path:
+    """Persist deterministic registry snapshot to runs/<run_id>/control/registry.json."""
+
+    registry_path = Path(run_dir) / "control" / "registry.json"
+    payload = build_registry_snapshot(registry)
+    _write_json_atomic(registry_path, payload)
+    return registry_path
+
+
+def build_registry_snapshot(registry: AgentRegistry) -> dict[str, Any]:
+    """Build deterministic JSON-serializable registry payload."""
+
+    return {
+        "schema_version": 1,
+        "agents": [
+            registry.agents_by_id[agent_id].model_dump(mode="json")
+            for agent_id in registry.list_agent_ids()
+        ],
+        "capability_index": {
+            capability: list(agent_ids)
+            for capability, agent_ids in sorted(registry.capability_index.items())
+        },
+    }
 
 
 def load_agent_registry(
@@ -98,3 +125,10 @@ def _build_capability_index(agents_by_id: dict[str, AgentSpec]) -> dict[str, tup
     for capability, agent_ids in index.items():
         normalized[capability] = tuple(sorted(agent_ids))
     return normalized
+
+
+def _write_json_atomic(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    temp_path.replace(path)

@@ -247,7 +247,7 @@ Acceptance criteria:
   - deterministic load order
   - deterministic capability index
   - deterministic tie-break rules (agent_id lexical or explicit priority)
-- [ ] 2.4 Export registry snapshot to `runs/<run_id>/control/registry.json`
+- [X] 2.4 Export registry snapshot to `runs/<run_id>/control/registry.json`
 
 Acceptance criteria:
 - Registry loads deterministically and errors clearly.

@@ -1,8 +1,14 @@
+import json
 from pathlib import Path
 
 import pytest
 
-from agentforge.control.registry import load_agent_registry, load_agent_registry_from_paths
+from agentforge.control.registry import (
+    build_registry_snapshot,
+    export_registry_snapshot,
+    load_agent_registry,
+    load_agent_registry_from_paths,
+)
 
 
 def _write_agent_yaml(
@@ -76,3 +82,27 @@ def test_load_agent_registry_from_repo_uses_discovery_roots(tmp_path: Path) -> N
 
     registry = load_agent_registry(tmp_path, env_value=str(env_dir))
     assert registry.list_agent_ids() == ["agent.demo", "agent.env", "agent.pack"]
+
+
+def test_export_registry_snapshot_writes_control_registry_json(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agents" / "demo" / "agent.yaml"
+    _write_agent_yaml(agent_yaml, agent_id="agent.demo", intents=["research"], tags=["demo"])
+    registry = load_agent_registry(tmp_path)
+
+    registry_path = export_registry_snapshot(tmp_path / "runs" / "run-001", registry)
+    payload = json.loads(registry_path.read_text(encoding="utf-8"))
+
+    assert registry_path == tmp_path / "runs" / "run-001" / "control" / "registry.json"
+    assert payload["schema_version"] == 1
+    assert payload["agents"][0]["agent_id"] == "agent.demo"
+
+
+def test_build_registry_snapshot_is_deterministic(tmp_path: Path) -> None:
+    first = tmp_path / "b.yaml"
+    second = tmp_path / "a.yaml"
+    _write_agent_yaml(first, agent_id="agent.beta", intents=["research"], tags=["digest"])
+    _write_agent_yaml(second, agent_id="agent.alpha", intents=["research"], tags=["digest"])
+
+    registry_a = load_agent_registry_from_paths([first, second])
+    registry_b = load_agent_registry_from_paths([second, first])
+    assert build_registry_snapshot(registry_a) == build_registry_snapshot(registry_b)
