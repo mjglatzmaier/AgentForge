@@ -269,7 +269,9 @@ def _build_synthesis_prompt(docs: list[Doc]) -> str:
         "Rules:",
         "- Every item must include citations with at least one doc_id.",
         "- Use only provided doc_ids for citations.",
-        "",
+        "- Do not hallucinate any information not supported by the cited documents.",
+        "- Max words per bullet: 100. Focus on concise insights and simple language (high level for non-experts).",
+        "- No newlines in any string values.",
         "Documents:",
     ]
     for doc in docs:

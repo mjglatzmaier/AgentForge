@@ -17,7 +17,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["agentforge"]
+packages = [
+  "agentforge",
+  "agents",
+  "agents.research_digest",
+  "agents.research_digest.src",
+  "agents.research_digest.tools",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -48,7 +48,7 @@ steps:
       model: "gpt-4o-mini"
       top_k: 10
       temperature: 0.2
-      max_output_tokens: 800
+      max_output_tokens: 2000
 
   - id: render
     kind: tool

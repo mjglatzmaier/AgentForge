@@ -1,0 +1,1 @@
+"""Research digest agent package."""

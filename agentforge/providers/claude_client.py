@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from agentforge.providers.base import (
     BaseProvider,
@@ -18,6 +18,7 @@ from agentforge.providers.base import (
     ProviderTransientError,
     ProviderValidationError,
 )
+from agentforge.providers.parsing import parse_and_validate_response_text
 
 
 class ClaudeProvider(BaseProvider):
@@ -86,7 +87,9 @@ class ClaudeProvider(BaseProvider):
         latency_ms = int((perf_counter() - started) * 1000)
         body = response.json()
         raw_text = _extract_claude_text(body)
-        parsed = _parse_and_validate(raw_text, response_model=response_model, provider=self.name)
+        parsed = parse_and_validate_response_text(
+            raw_text, response_model=response_model, provider=self.name
+        )
         usage = _extract_usage(body)
         request_id = response.headers.get("request-id") or body.get("id")
 
@@ -115,23 +118,6 @@ def _extract_claude_text(body: dict[str, Any]) -> str:
     if not texts:
         raise ProviderValidationError("Claude response did not include text content.")
     return "".join(texts)
-
-
-def _parse_and_validate(raw_text: str, *, response_model: type[BaseModel], provider: str) -> BaseModel:
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        excerpt = raw_text[:300]
-        raise ProviderValidationError(
-            f"{provider} returned non-JSON output; raw excerpt: {excerpt}"
-        ) from exc
-    try:
-        return response_model.model_validate(payload)
-    except ValidationError as exc:
-        excerpt = raw_text[:300]
-        raise ProviderValidationError(
-            f"{provider} response failed schema validation; raw excerpt: {excerpt}"
-        ) from exc
 
 
 def _extract_usage(body: dict[str, Any]) -> dict[str, int]:
