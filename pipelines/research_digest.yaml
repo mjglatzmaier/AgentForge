@@ -38,13 +38,24 @@ steps:
       keywords: ["agent", "reasoning", "evaluation", "benchmark", "retrieval"]
       top_k: 20
 
+  - id: synthesize
+    kind: tool
+    ref: agents.research_digest.src.steps:synthesize_digest
+    inputs: ["docs_ranked"]
+    outputs: ["digest_json"]
+    config:
+      provider: "openai"
+      model: "gpt-4o-mini"
+      top_k: 10
+      temperature: 0.2
+      max_output_tokens: 800
+
   - id: render
     kind: tool
     ref: agents.research_digest.src.steps:render
-    inputs: ["docs_ranked"]
-    outputs: ["digest_json", "digest_md"]
+    inputs: ["digest_json"]
+    outputs: ["digest_md"]
     config:
-      top_n: 10
       output_filenames:
         json: "digest.json"
         markdown: "digest.md"

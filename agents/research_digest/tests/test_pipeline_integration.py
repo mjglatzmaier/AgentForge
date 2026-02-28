@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path, PurePosixPath
 
+from agentforge.providers.base import LlmResult
 from agentforge.contracts.models import Mode, StepStatus
 from agentforge.orchestrator.runner import run_pipeline
 from agentforge.storage.manifest import load_manifest
+from agents.research_digest.src import steps as digest_steps
+from agents.research_digest.tools.models import Digest, DigestItem
 from agents.research_digest.tools import arxiv as arxiv_tool
 from agents.research_digest.tools import rss as rss_tool
 
@@ -63,6 +66,37 @@ def test_research_digest_pipeline_runs_end_to_end(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr(arxiv_tool.httpx, "get", _fake_get)
     monkeypatch.setattr(rss_tool.httpx, "get", _fake_get)
+    
+    class _StubProvider:
+        def generate_json(self, prompt: str, *args, **kwargs):
+            marker = "doc_id="
+            first_doc_id = "doc-fallback"
+            for line in prompt.splitlines():
+                if line.startswith("- doc_id="):
+                    first_doc_id = line.split(marker, 1)[1].split(" |", 1)[0].strip()
+                    break
+            digest = Digest(
+                generated_at="2026-01-04T00:00:00Z",
+                items=[
+                    DigestItem(
+                        doc_id=first_doc_id,
+                        title="Synthesized Digest Item",
+                        url="https://example.com/synthesized",
+                        summary="Synthesized summary.",
+                        source="synthesize",
+                        score=1.0,
+                        citations=[first_doc_id],
+                    )
+                ],
+            )
+            return LlmResult(
+                parsed=digest,
+                raw_text=digest.model_dump_json(),
+                provider="stub",
+                model="stub-model",
+            )
+
+    monkeypatch.setattr(digest_steps, "_resolve_provider", lambda _ctx: _StubProvider())
 
     repo_root = Path(__file__).resolve().parents[3]
     pipeline_path = repo_root / "pipelines" / "research_digest.yaml"
@@ -75,11 +109,12 @@ def test_research_digest_pipeline_runs_end_to_end(tmp_path: Path, monkeypatch) -
         "01_fetch_rss",
         "02_normalize",
         "03_dedupe_rank",
-        "04_render",
+        "04_synthesize",
+        "05_render",
     ]
 
     manifest = load_manifest(run_dir / "manifest.json")
-    assert [step.status for step in manifest.steps] == [StepStatus.SUCCESS] * 5
+    assert [step.status for step in manifest.steps] == [StepStatus.SUCCESS] * 6
 
     expected_artifacts = {
         "docs_arxiv",
@@ -105,3 +140,7 @@ def test_research_digest_pipeline_runs_end_to_end(tmp_path: Path, monkeypatch) -
     digest_md = manifest.require_artifact("digest_md")
     assert (run_dir / digest_json.path).is_file()
     assert (run_dir / digest_md.path).is_file()
+    digest_json_payload = json.loads((run_dir / digest_json.path).read_text(encoding="utf-8"))
+    digest_md_text = (run_dir / digest_md.path).read_text(encoding="utf-8")
+    citation_doc_id = digest_json_payload["items"][0]["citations"][0]
+    assert citation_doc_id in digest_md_text

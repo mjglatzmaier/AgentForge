@@ -80,10 +80,22 @@ def dedupe_rank(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def render(ctx: dict[str, Any]) -> dict[str, Any]:
+    step_dir = Path(ctx["step_dir"])
+    digest_input = ctx.get("inputs", {}).get("digest_json")
+    if isinstance(digest_input, dict):
+        digest_path = Path(_require_input(ctx, "digest_json")["abs_path"])
+        digest = Digest.model_validate(json.loads(digest_path.read_text(encoding="utf-8")))
+        outputs_dir = step_dir / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        (outputs_dir / "digest.md").write_text(_digest_to_markdown(digest), encoding="utf-8")
+        return {
+            "outputs": [{"name": "digest_md", "type": "markdown", "path": "outputs/digest.md"}],
+            "metrics": {"count": len(digest.items)},
+        }
+
     tool_ctx = dict(ctx)
     tool_ctx["inputs"] = {"docs_ranked": _require_input(ctx, "docs_ranked")}
     render_tool.run(tool_ctx)
-    step_dir = Path(ctx["step_dir"])
     digest = json.loads((step_dir / "outputs" / "digest.json").read_text(encoding="utf-8"))
     return {
         "outputs": [
@@ -266,6 +278,23 @@ def _build_synthesis_prompt(docs: list[Doc]) -> str:
             f"published={doc.published or ''} | url={doc.url} | summary={doc.summary}"
         )
     return "\n".join(lines)
+
+
+def _digest_to_markdown(digest: Digest) -> str:
+    lines = [f"# {digest.title}", "", f"Generated: {digest.generated_at}", ""]
+    if not digest.items:
+        lines.append("- No items found.")
+        return "\n".join(lines) + "\n"
+
+    for idx, item in enumerate(digest.items, start=1):
+        lines.append(f"{idx}. **{item.title}** ({item.source}, score={item.score:.1f})")
+        lines.append(f"   - doc_id: `{item.doc_id}`")
+        lines.append(f"   - {item.summary}")
+        lines.append(f"   - {item.url}")
+        if item.citations:
+            citations = ", ".join(f"`{citation}`" for citation in item.citations)
+            lines.append(f"   - Citations: {citations}")
+    return "\n".join(lines) + "\n"
 
 
 def _coerce_digest(parsed: Any) -> Digest:

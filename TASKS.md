@@ -722,9 +722,9 @@ Acceptance criteria:
 
 ---
 
-### 4.4 Update pipeline
+- [X] 4.4 Update pipeline
 
-Update `pipelines/research_digest.yaml` to:
+- [X] Update `pipelines/research_digest.yaml` to:
 `fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> synthesize -> render`
 (and optionally `-> verify -> render` depending on your ordering preference)
 
