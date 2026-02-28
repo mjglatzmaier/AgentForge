@@ -654,20 +654,20 @@ Acceptance criteria:
 
 ---
 
-### 4.1 Provider implementations (stubs first; env-based keys)
+- [X] 4.1 Provider implementations (stubs first; env-based keys)
 
-Implement in:
-- `agentforge/providers/openai_client.py`
-- `agentforge/providers/claude_client.py`
+- [X] Implement in:
+- [X] `agentforge/providers/openai_client.py`
+- [X] `agentforge/providers/claude_client.py`
 
-Requirements:
-- Read API keys from env (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
-- Implement `generate()` using the provider’s chat API.
-- Return `LlmResult` with best-effort `usage`, `model`, `request_id`.
-- For structured output:
-  - ask the model to output STRICT JSON matching the schema.
-  - parse JSON and validate via `response_model.model_validate(...)`.
-  - raise `ProviderValidationError` on validation failure (include raw output excerpt).
+- [X] Requirements:
+- [X] Read API keys from env (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- [X] Implement `generate()` using the provider’s chat API.
+- [X] Return `LlmResult` with best-effort `usage`, `model`, `request_id`.
+- [X] For structured output:
+  - [X] ask the model to output STRICT JSON matching the schema.
+  - [X] parse JSON and validate via `response_model.model_validate(...)`.
+  - [X] raise `ProviderValidationError` on validation failure (include raw output excerpt).
 
 Acceptance criteria:
 - Both providers can be instantiated and can produce a validated response for a tiny demo schema.
