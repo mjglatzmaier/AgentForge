@@ -6,12 +6,15 @@ from agentforge.control.events import (
     load_control_events,
     replay_control_events,
 )
+from agentforge.control.registry import AgentRegistry, load_agent_registry
 from agentforge.control.state import persist_control_artifacts
 
 __all__ = [
+    "AgentRegistry",
     "append_control_event",
     "discover_agent_spec_paths",
     "load_control_events",
+    "load_agent_registry",
     "replay_control_events",
     "persist_control_artifacts",
 ]

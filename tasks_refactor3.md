@@ -243,7 +243,7 @@ Acceptance criteria:
   - `agents/` (demo)
   - `agents_packs/*/agents/` (submodules)
   - dirs from `AGENTFORGE_AGENT_PACKS_DIRS`
-- [ ] 2.3 Build `AgentRegistry`:
+- [X] 2.3 Build `AgentRegistry`:
   - deterministic load order
   - deterministic capability index
   - deterministic tie-break rules (agent_id lexical or explicit priority)
