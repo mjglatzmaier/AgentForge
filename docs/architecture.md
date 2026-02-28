@@ -138,6 +138,21 @@ Modes affect only logging verbosity and metadata fields. Modes must not change
 semantic artifact outputs. The orchestrator does not pass mode into step tool
 context unless explicitly requested by step configuration.
 
+## Runtime Executor Boundary
+
+Step execution is abstracted behind a `StepExecutor` runtime interface:
+
+ - `execute(step, context) -> StepResult`
+
+Current implementation:
+
+ - `InProcExecutor` (Python callable execution in the same process)
+
+Extension path (without orchestrator refactor):
+
+ - `SubprocessExecutor` for isolated process execution
+ - `ContainerExecutor` for containerized execution
+
 ## Design Constraints
 
  - No implicit global state

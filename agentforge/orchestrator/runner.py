@@ -23,8 +23,8 @@ from agentforge.orchestrator.cache import (
     load_cache_record,
     save_cache_record,
 )
+from agentforge.orchestrator.executor import InProcExecutor, StepExecutionResult, StepExecutor
 from agentforge.orchestrator.pipeline import load_pipeline
-from agentforge.orchestrator.resolver import resolve_ref
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import init_manifest, register_artifacts, save_manifest
 from agentforge.storage.run_layout import create_run_layout, create_step_dir
@@ -67,12 +67,18 @@ def validate_step_outputs(step: StepSpec, returned: dict[str, Any]) -> None:
         raise ValueError(f"Step '{step.id}' output contract violation: {detail}")
 
 
-def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) -> str:
+def run_pipeline(
+    pipeline_path: str | Path,
+    base_dir: str | Path,
+    mode: Mode,
+    executor: StepExecutor | None = None,
+) -> str:
     """Run one pipeline sequentially and return generated run_id."""
     pipeline = load_pipeline(pipeline_path)
     base_path = Path(base_dir)
     run_id = str(uuid4())
     layout = create_run_layout(base_path, run_id)
+    step_executor = executor or InProcExecutor()
 
     run_config = RunConfig(
         run_id=run_id,
@@ -125,7 +131,6 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
                 continue
 
-            step_callable = resolve_ref(step.ref)
             ctx = _build_step_context(
                 input_artifacts=input_artifacts,
                 layout=layout.run_dir,
@@ -138,7 +143,10 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 raise AssertionError(
                     f"Mode must not be passed to step '{step.id}' unless explicitly requested."
                 )
-            returned = step_callable(ctx)
+            execution_result = step_executor.execute(step=step, context=ctx)
+            if not isinstance(execution_result, StepExecutionResult):
+                raise TypeError("StepExecutor must return StepExecutionResult.")
+            returned = execution_result.raw_output
             outputs_payload, metrics = _validate_step_payload(step=step, returned=returned)
             artifacts = _materialize_step_artifacts(
                 outputs_payload=outputs_payload,
@@ -152,8 +160,8 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
             step_result = StepResult(
                 step_id=step.id,
                 status=StepStatus.SUCCESS,
-                started_at=started_at,
-                ended_at=_utcnow(),
+                started_at=execution_result.started_at,
+                ended_at=execution_result.ended_at,
                 metrics=metrics,
                 outputs=artifacts,
             )

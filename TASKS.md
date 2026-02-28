@@ -481,11 +481,11 @@ Acceptance criteria:
 
 ## Phase 2.14: Runtime Abstraction Boundary (Future-proofing)
 
-- 2.14.0 Introduce execution interface:
+- [X] 2.14.0 Introduce execution interface:
     - StepExecutor base class
         - execute(step, context) -> StepResult
-- 2.14.1 Current implementation: InProcExecutor.
-- 2.14.2 Document extension path for:
+- [X] 2.14.1 Current implementation: InProcExecutor.
+- [X] 2.14.2 Document extension path for:
     - SubprocessExecutor
     - ContainerExecutor
 
