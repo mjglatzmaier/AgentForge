@@ -256,6 +256,85 @@ class AgentSpec(BaseModel):
         return normalized
 
 
+class ExecutionStatus(str, Enum):
+    """Outcome status returned by runtime adapters."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class ExecutionRequest(BaseModel):
+    """Typed request envelope sent from control plane to execution adapters."""
+
+    run_id: str
+    node_id: str
+    agent_id: str
+    operation: str
+    runtime: AgentRuntimeKind
+    inputs: list[str] = Field(default_factory=list)
+    timeout_s: float
+    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("run_id", "node_id", "agent_id", "operation")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ExecutionRequest required string fields must be non-empty.")
+        return normalized
+
+    @field_validator("inputs")
+    @classmethod
+    def validate_inputs(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("ExecutionRequest inputs entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+    @field_validator("timeout_s")
+    @classmethod
+    def validate_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("ExecutionRequest timeout_s must be > 0.")
+        return value
+
+
+class ExecutionResult(BaseModel):
+    """Typed response envelope returned by runtime adapters."""
+
+    status: ExecutionStatus
+    produced_artifacts: list["ArtifactRef"] = Field(default_factory=list)
+    metrics: dict[str, float | int | str] = Field(default_factory=dict)
+    error: str | None = None
+    traceback_excerpt: str | None = None
+    latency_ms: int | None = None
+    adapter: str
+    adapter_version: str | None = None
+
+    @field_validator("error", "traceback_excerpt", "adapter", "adapter_version")
+    @classmethod
+    def validate_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ExecutionResult string fields must be non-empty when provided.")
+        return normalized
+
+    @field_validator("latency_ms")
+    @classmethod
+    def validate_latency(cls, value: int | None) -> int | None:
+        if value is None:
+            return None
+        if value < 0:
+            raise ValueError("ExecutionResult latency_ms must be >= 0.")
+        return value
+
+
 class ControlNode(BaseModel):
     """Control-plane node contract for execution planning."""
 

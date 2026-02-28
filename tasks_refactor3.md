@@ -257,7 +257,7 @@ Acceptance criteria:
 
 ## Phase 3 — Execution Plane Boundary + Runtime Adapters
 
-- [ ] 3.1 Define `ExecutionRequest` and `ExecutionResult`:
+- [X] 3.1 Define `ExecutionRequest` and `ExecutionResult`:
   - request: run_id/node_id/agent_id/operation/runtime/inputs/timeout/policy/metadata
   - result: status/produced_artifacts/metrics/error/latency_ms/adapter info
 - [ ] 3.2 Implement adapters:
