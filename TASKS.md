@@ -580,17 +580,17 @@ Acceptance criteria:
 
 ---
 
-### 3.3 Minimal correctness tests (dedupe + pipeline invariants)
+- [X] 3.3 Minimal correctness tests (dedupe + pipeline invariants)
 
-- 3.3.1 Dedupe stability test:
+- [X] 3.3.1 Dedupe stability test:
   - Given a fixed list of docs with duplicates (same url/hash), output is stable and deterministic
   - Ranking ordering is stable given same inputs
 
-- 3.3.2 Digest rendering test:
+- [X] 3.3.2 Digest rendering test:
   - Given a small Digest model, render produces markdown with expected headings/structure
   - Ensure citations/doc_ids are included where applicable (even pre-LLM)
 
-- 3.3.3 Regression guard: manifest artifact naming
+- [X] 3.3.3 Regression guard: manifest artifact naming
   - Ensure artifact names used by the agent are globally unique within run
   - Ensure paths in ArtifactRef are relative to run root
 

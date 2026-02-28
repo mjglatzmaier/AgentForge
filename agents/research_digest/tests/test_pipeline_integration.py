@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from agentforge.contracts.models import Mode, StepStatus
 from agentforge.orchestrator.runner import run_pipeline
@@ -89,7 +89,13 @@ def test_research_digest_pipeline_runs_end_to_end(tmp_path: Path, monkeypatch) -
         "digest_json",
         "digest_md",
     }
-    assert {artifact.name for artifact in manifest.artifacts} == expected_artifacts
+    artifact_names = [artifact.name for artifact in manifest.artifacts]
+    assert set(artifact_names) == expected_artifacts
+    assert len(artifact_names) == len(set(artifact_names))
+    for artifact in manifest.artifacts:
+        assert not Path(artifact.path).is_absolute()
+        assert ".." not in PurePosixPath(artifact.path).parts
+        assert (run_dir / artifact.path).is_file()
 
     for step_dir in sorted((run_dir / "steps").iterdir()):
         meta = json.loads((step_dir / "meta.json").read_text(encoding="utf-8"))

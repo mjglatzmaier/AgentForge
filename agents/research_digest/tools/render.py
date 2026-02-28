@@ -57,6 +57,7 @@ def _to_markdown(digest: Digest) -> str:
 
     for idx, item in enumerate(digest.items, start=1):
         lines.append(f"{idx}. **{item.title}** ({item.source}, score={item.score:.1f})")
+        lines.append(f"   - doc_id: `{item.doc_id}`")
         lines.append(f"   - {item.summary}")
         lines.append(f"   - {item.url}")
     return "\n".join(lines) + "\n"

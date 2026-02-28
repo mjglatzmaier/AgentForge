@@ -108,3 +108,5 @@ def test_normalize_and_render_pipeline_shapes(tmp_path: Path) -> None:
     assert [output["name"] for output in render_result["outputs"]] == ["digest_md", "digest_json"]
     assert digest_json["title"] == "Research Digest"
     assert "# Research Digest" in digest_md
+    for item in digest_json["items"]:
+        assert item["doc_id"] in digest_md
