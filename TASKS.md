@@ -506,15 +506,104 @@ Acceptance criteria (Phase 2):
     - [X] normalize.py: map all sources to a common Doc model
     - [X] dedupe_rank.py: dedupe by url/hash, then rank by simple keyword score
     - [X] render.py: render markdown from a structured Digest model
-- 3.1 Implement agent-specific step wrappers in agents/research_digest/src/steps.py
-- 3.2 Provide a working pipeline YAML in pipelines/research_digest.yaml that runs:
-    fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render
-- 3.3 Add minimal tests:
-    - agents/research_digest/tests/test_dedupe.py verifies dedupe stability
+## Phase 3: Research Digest Agent (tools only, no LLM yet)
+
+Goal:
+Provide a deterministic, end-to-end example agent that proves orchestrator + manifest + caching work using real tools (no LLM calls).
+
+---
+
+- [X] 3.1 Agent step wrappers (orchestrator contract adapters)
+
+Implement step callables in `agents/research_digest/src/steps.py` that adapt tool functions to the orchestrator step contract.
+
+- [X] 3.1.1 Define wrapper conventions:
+  - Each wrapper is an in-proc callable referenced by pipeline YAML: `"agents.research_digest.src.steps:<fn>"`
+  - Wrapper reads inputs from ctx["manifest"] (by artifact name), never from hardcoded paths
+  - Wrapper writes all outputs to: `<step_dir>/outputs/`
+  - Wrapper returns `dict[str, Any]` whose keys EXACTLY match `StepSpec.outputs`
+    - Values are metadata dicts `{ "name": str, "type": str, "path": str }` (or whatever your runner expects)
+  - Wrapper must not compute sha256 or touch manifest persistence directly
+
+- [X] 3.1.2 Implement wrappers (names match pipeline step IDs):
+  - fetch_arxiv(ctx) -> outputs: docs_arxiv.json
+  - fetch_rss(ctx) -> outputs: docs_rss.json
+  - normalize(ctx) -> outputs: docs_normalized.json
+  - dedupe_rank(ctx) -> outputs: docs_ranked.json
+  - render(ctx) -> outputs: digest.json + digest.md
+
+- [X] 3.1.3 Ensure determinism:
+  - Stable sorting where appropriate (e.g., by published date then url)
+  - Fixed max item counts configurable via step config (ctx["step"].config or similar)
+
+- [X] 3.1.4 Tests:
+  - Unit test one wrapper in isolation with a fake ctx + tmp_path:
+    - verifies it writes expected output file(s)
+    - verifies it returns exactly the expected output keys
+    - verifies output paths are relative under outputs/
 
 Acceptance criteria:
-- Pipeline produces a markdown digest and a JSON digest without calling any LLM.
-- All outputs are registered in manifest.json.
+- All wrappers follow the orchestrator step contract and can run in isolation.
+
+---
+
+### 3.2 Working pipeline YAML (end-to-end execution)
+
+Provide/validate `pipelines/research_digest.yaml` that runs:
+
+`fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render`
+
+- 3.2.1 Pipeline YAML requirements:
+  - name: "research_digest"
+  - tool steps reference wrapper refs (not raw tool modules)
+  - inputs/outputs declared for each step and match wrapper return keys exactly
+  - step config includes defaults:
+    - arxiv query / categories
+    - rss feeds list
+    - max_docs per source
+    - ranking keywords
+    - output filenames
+
+- 3.2.2 Add example pipeline config:
+  - `examples/research_digest.local.yaml` tuned for local dev (small doc counts)
+
+- 3.2.3 Add integration test:
+  - Run orchestrator on the pipeline with tmp_path base_dir
+  - Assert:
+    - run directory created with steps
+    - manifest.json contains artifacts for digest.md and digest.json (and upstream docs)
+    - meta.json exists for every step and has status=success
+
+Acceptance criteria:
+- Pipeline executes end-to-end without LLM calls.
+- Digest artifacts are present and indexed in the manifest.
+
+---
+
+### 3.3 Minimal correctness tests (dedupe + pipeline invariants)
+
+- 3.3.1 Dedupe stability test:
+  - Given a fixed list of docs with duplicates (same url/hash), output is stable and deterministic
+  - Ranking ordering is stable given same inputs
+
+- 3.3.2 Digest rendering test:
+  - Given a small Digest model, render produces markdown with expected headings/structure
+  - Ensure citations/doc_ids are included where applicable (even pre-LLM)
+
+- 3.3.3 Regression guard: manifest artifact naming
+  - Ensure artifact names used by the agent are globally unique within run
+  - Ensure paths in ArtifactRef are relative to run root
+
+Acceptance criteria:
+- Dedupe output is stable.
+- Render output structure is stable.
+- Manifest indexing for key outputs is regression-protected.
+
+---
+
+Phase 3 acceptance criteria:
+- Pipeline produces both a markdown digest and a JSON digest with no LLM calls.
+- All produced artifacts are registered in manifest.json with sha256 and correct relative paths.
 
 ## Phase 4: LLM synthesis (Claude + GPT-5.2) with structured output
 - 4.0 Define provider interface in agentforge/providers/base.py:
