@@ -500,39 +500,236 @@ Acceptance criteria (Phase 2):
 - meta.json files are valid JSON (never empty) for every step.
 
 ## Phase 3: Research Digest Agent (tools only, no LLM yet)
-- 3.0 Implement tools under agents/research_digest/tools:
-    - arxiv.py: fetch list of papers (title, authors, abstract, url, published)
-    - rss.py: fetch RSS items (title, url, snippet, published)
-    - normalize.py: map all sources to a common Doc model
-    - dedupe_rank.py: dedupe by url/hash, then rank by simple keyword score
-    - render.py: render markdown from a structured Digest model
-- 3.1 Implement agent-specific step wrappers in agents/research_digest/src/steps.py
-- 3.2 Provide a working pipeline YAML in pipelines/research_digest.yaml that runs:
-    fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render
-- 3.3 Add minimal tests:
-    - agents/research_digest/tests/test_dedupe.py verifies dedupe stability
+- [X] 3.0 Implement tools under agents/research_digest/tools:
+    - [X] arxiv.py: fetch list of papers (title, authors, abstract, url, published)
+    - [X] rss.py: fetch RSS items (title, url, snippet, published)
+    - [X] normalize.py: map all sources to a common Doc model
+    - [X] dedupe_rank.py: dedupe by url/hash, then rank by simple keyword score
+    - [X] render.py: render markdown from a structured Digest model
+## Phase 3: Research Digest Agent (tools only, no LLM yet)
+
+Goal:
+Provide a deterministic, end-to-end example agent that proves orchestrator + manifest + caching work using real tools (no LLM calls).
+
+---
+
+- [X] 3.1 Agent step wrappers (orchestrator contract adapters)
+
+Implement step callables in `agents/research_digest/src/steps.py` that adapt tool functions to the orchestrator step contract.
+
+- [X] 3.1.1 Define wrapper conventions:
+  - Each wrapper is an in-proc callable referenced by pipeline YAML: `"agents.research_digest.src.steps:<fn>"`
+  - Wrapper reads inputs from ctx["manifest"] (by artifact name), never from hardcoded paths
+  - Wrapper writes all outputs to: `<step_dir>/outputs/`
+  - Wrapper returns `dict[str, Any]` whose keys EXACTLY match `StepSpec.outputs`
+    - Values are metadata dicts `{ "name": str, "type": str, "path": str }` (or whatever your runner expects)
+  - Wrapper must not compute sha256 or touch manifest persistence directly
+
+- [X] 3.1.2 Implement wrappers (names match pipeline step IDs):
+  - fetch_arxiv(ctx) -> outputs: docs_arxiv.json
+  - fetch_rss(ctx) -> outputs: docs_rss.json
+  - normalize(ctx) -> outputs: docs_normalized.json
+  - dedupe_rank(ctx) -> outputs: docs_ranked.json
+  - render(ctx) -> outputs: digest.json + digest.md
+
+- [X] 3.1.3 Ensure determinism:
+  - Stable sorting where appropriate (e.g., by published date then url)
+  - Fixed max item counts configurable via step config (ctx["step"].config or similar)
+
+- [X] 3.1.4 Tests:
+  - Unit test one wrapper in isolation with a fake ctx + tmp_path:
+    - verifies it writes expected output file(s)
+    - verifies it returns exactly the expected output keys
+    - verifies output paths are relative under outputs/
 
 Acceptance criteria:
-- Pipeline produces a markdown digest and a JSON digest without calling any LLM.
-- All outputs are registered in manifest.json.
+- All wrappers follow the orchestrator step contract and can run in isolation.
 
-## Phase 4: LLM synthesis (Claude + GPT-5.2) with structured output
-- 4.0 Define provider interface in agentforge/providers/base.py:
-    - generate_json(prompt, schema) -> BaseModel
-- 4.1 Implement OpenAI + Claude clients (stubs initially; env-based API keys).
-- 4.2 Add synthesize step:
-    - input: top-k docs
-    - output: Digest JSON (Pydantic)
-    - enforce citation doc_ids in every bullet
-- 4.3 Add verifier step (optional in v0.1):
-    - checks that each claim has citations
-    - flags uncited claims
-- 4.4 Update pipeline to:
-    fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> synthesize -> render
+---
+
+- [X] 3.2 Working pipeline YAML (end-to-end execution)
+
+Provide/validate `pipelines/research_digest.yaml` that runs:
+
+`fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render`
+
+- [X] 3.2.1 Pipeline YAML requirements:
+  - name: "research_digest"
+  - tool steps reference wrapper refs (not raw tool modules)
+  - inputs/outputs declared for each step and match wrapper return keys exactly
+  - step config includes defaults:
+    - arxiv query / categories
+    - rss feeds list
+    - max_docs per source
+    - ranking keywords
+    - output filenames
+
+- [X] 3.2.2 Add example pipeline config:
+  - `examples/research_digest.local.yaml` tuned for local dev (small doc counts)
+
+- [X] 3.2.3 Add integration test:
+  - Run orchestrator on the pipeline with tmp_path base_dir
+  - Assert:
+    - run directory created with steps
+    - manifest.json contains artifacts for digest.md and digest.json (and upstream docs)
+    - meta.json exists for every step and has status=success
 
 Acceptance criteria:
-- Digest JSON conforms to schema.
-- Render includes citations referencing doc ids.
+- Pipeline executes end-to-end without LLM calls.
+- Digest artifacts are present and indexed in the manifest.
+
+---
+
+- [X] 3.3 Minimal correctness tests (dedupe + pipeline invariants)
+
+- [X] 3.3.1 Dedupe stability test:
+  - Given a fixed list of docs with duplicates (same url/hash), output is stable and deterministic
+  - Ranking ordering is stable given same inputs
+
+- [X] 3.3.2 Digest rendering test:
+  - Given a small Digest model, render produces markdown with expected headings/structure
+  - Ensure citations/doc_ids are included where applicable (even pre-LLM)
+
+- [X] 3.3.3 Regression guard: manifest artifact naming
+  - Ensure artifact names used by the agent are globally unique within run
+  - Ensure paths in ArtifactRef are relative to run root
+
+Acceptance criteria:
+- Dedupe output is stable.
+- Render output structure is stable.
+- Manifest indexing for key outputs is regression-protected.
+
+---
+
+Phase 3 acceptance criteria:
+- Pipeline produces both a markdown digest and a JSON digest with no LLM calls.
+- All produced artifacts are registered in manifest.json with sha256 and correct relative paths.
+
+## Phase 4: LLM synthesis with structured output (provider-agnostic)
+
+Goal:
+Add a minimal provider layer that can produce validated Pydantic outputs with robust error handling and traceable metadata.
+
+- [X] 4.0 Provider interface (minimal, extensible)
+
+Implement in `agentforge/providers/base.py`:
+
+- [X] Define a request/response API:
+
+  - `LlmRequest` (Pydantic or dataclass):
+    - `system_prompt: str | None`
+    - `prompt: str`
+    - `response_model: type[BaseModel]`  (Pydantic model class)
+    - `model: str | None`               (provider-specific model id)
+    - `temperature: float | None`
+    - `max_output_tokens: int | None`
+    - `seed: int | None`                (optional; best-effort)
+    - `timeout_s: float | None`
+    - `metadata: dict[str, Any] = {}`   (freeform: run_id, step_id, etc.)
+
+  - `LlmResult[T]`:
+    - `parsed: T`                       (validated Pydantic instance)
+    - `raw_text: str`                   (raw assistant text or JSON string)
+    - `provider: str`
+    - `model: str`
+    - `usage: dict[str, int] = {}`      (prompt_tokens, completion_tokens if available)
+    - `latency_ms: int | None`
+    - `request_id: str | None`
+    - `warnings: list[str] = []`
+
+- [X] Define `BaseProvider`:
+  - `name: str`
+  - `generate(request: LlmRequest) -> LlmResult[BaseModel]`
+  - Helper: `generate_json(prompt, response_model, **kwargs)` as ergonomic wrapper
+
+- [X] Define provider errors:
+  - `ProviderError` base
+  - `ProviderTransientError` (retryable)
+  - `ProviderPermanentError` (non-retryable)
+  - `ProviderValidationError` (model output failed Pydantic validation)
+
+Acceptance criteria:
+- Provider interface can return validated Pydantic outputs plus metadata.
+- Errors are typed so retry logic can be generic.
+
+---
+
+- [X] 4.1 Provider implementations (stubs first; env-based keys)
+
+- [X] Implement in:
+- [X] `agentforge/providers/openai_client.py`
+- [X] `agentforge/providers/claude_client.py`
+
+- [X] Requirements:
+- [X] Read API keys from env (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- [X] Implement `generate()` using the provider’s chat API.
+- [X] Return `LlmResult` with best-effort `usage`, `model`, `request_id`.
+- [X] For structured output:
+  - [X] ask the model to output STRICT JSON matching the schema.
+  - [X] parse JSON and validate via `response_model.model_validate(...)`.
+  - [X] raise `ProviderValidationError` on validation failure (include raw output excerpt).
+
+Acceptance criteria:
+- Both providers can be instantiated and can produce a validated response for a tiny demo schema.
+- Implementation remains provider-agnostic above this layer.
+
+---
+
+- [X] 4.2 LLM-backed synthesize step (Digest JSON)
+
+- [X] Implement `agents/research_digest/src/steps.py:synthesize_digest` (or similar):
+
+Inputs:
+- top-k normalized docs artifact (JSON list of Doc models)
+
+Outputs:
+- `digest.json` (validated Pydantic Digest model)
+- (optional debug) `synthesis_prompt.txt`, `raw_response.txt` in debug mode
+
+Rules:
+- Every bullet/claim in the Digest MUST include `citations: list[str]` referencing `doc_id`s.
+- Enforce this with:
+  - prompt instruction + schema requiring citations for each bullet
+  - (optional) post-parse validation that citations are non-empty + valid ids
+
+Acceptance criteria:
+- Step produces `digest.json` conforming to schema.
+- All bullets include at least one citation doc_id present in the input set.
+
+---
+
+- [X] 4.3 Verifier step (optional in v0.1, but recommended)
+
+- [X] Implement `verify_digest_citations`:
+
+Inputs:
+- `digest.json`
+- docs list (for valid doc_ids)
+
+Outputs:
+- `citation_report.json` with:
+  - total_bullets
+  - bullets_missing_citations
+  - invalid_doc_id_citations
+  - pass/fail boolean
+
+Behavior:
+- Does NOT modify digest.
+- Sets step status to success but records failures in metrics/report (or optionally fails in eval mode).
+
+Acceptance criteria:
+- Verifier correctly detects missing/invalid citations.
+
+---
+
+- [X] 4.4 Update pipeline
+
+- [X] Update `pipelines/research_digest.yaml` to:
+`fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> synthesize -> render`
+(and optionally `-> verify -> render` depending on your ordering preference)
+
+Acceptance criteria:
+- Running the pipeline produces a rendered markdown digest that includes citations referencing doc ids.
 
 ## Phase 5: Evaluation module MVP (separate)
 - 5.0 Implement eval runner (eval/core/runner.py):

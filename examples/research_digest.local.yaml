@@ -1,0 +1,49 @@
+name: research_digest_local
+mode: debug
+steps:
+  - id: fetch_arxiv
+    kind: tool
+    ref: agents.research_digest.src.steps:fetch_arxiv
+    outputs: ["docs_arxiv"]
+    config:
+      query: "cat:cs.AI"
+      categories: ["cs.AI"]
+      max_docs: 3
+      feed_url: "https://export.arxiv.org/api/query"
+
+  - id: fetch_rss
+    kind: tool
+    ref: agents.research_digest.src.steps:fetch_rss
+    outputs: ["docs_rss"]
+    config:
+      feed_urls:
+        - "https://lilianweng.github.io/index.xml"
+      max_docs: 3
+
+  - id: normalize
+    kind: tool
+    ref: agents.research_digest.src.steps:normalize
+    inputs: ["docs_arxiv", "docs_rss"]
+    outputs: ["docs_normalized"]
+    config:
+      max_docs: 5
+
+  - id: dedupe_rank
+    kind: tool
+    ref: agents.research_digest.src.steps:dedupe_rank
+    inputs: ["docs_normalized"]
+    outputs: ["docs_ranked"]
+    config:
+      keywords: ["agent", "reasoning", "evaluation"]
+      top_k: 5
+
+  - id: render
+    kind: tool
+    ref: agents.research_digest.src.steps:render
+    inputs: ["docs_ranked"]
+    outputs: ["digest_json", "digest_md"]
+    config:
+      top_n: 5
+      output_filenames:
+        json: "digest.json"
+        markdown: "digest.md"
