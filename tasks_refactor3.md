@@ -197,28 +197,28 @@ Acceptance criteria:
 
 ## Phase 1 — Control Plane v0 (Batch DAG + Event Log)
 
-- [ ] 1.1 Implement `TriggerSpec`:
+- [X] 1.1 Implement `TriggerSpec`:
   - `kind: manual|schedule|event`
   - `schedule: cron|None`
   - `event_type: str|None`
   - `source: str|None`
   - `request_artifact: str|None`
   - `metadata: dict`
-- [ ] 1.2 Implement `ControlPlan` (DAG v0):
+- [X] 1.2 Implement `ControlPlan` (DAG v0):
   - `plan_id`
   - `nodes: list[ControlNode]`
   - `max_parallel`
   - `policy_snapshot`
   - `trigger: TriggerSpec`
   - dependencies via `depends_on` only; cycles rejected
-- [ ] 1.3 Implement `ControlNode`:
+- [X] 1.3 Implement `ControlNode`:
   - `node_id`, `agent_id`, `operation`, `inputs`, `outputs`, `depends_on`
   - `state` enum (pending/ready/running/succeeded/failed/paused/cancelled)
   - `retry_policy`, `timeout_s`, `metadata`
-- [ ] 1.4 Implement control event log:
+- [X] 1.4 Implement control event log:
   - `runs/<run_id>/control/events.jsonl` append-only
   - `ControlEvent` schema with `schema_version` + replay rules
-- [ ] 1.5 Persist control-plane artifacts:
+- [X] 1.5 Persist control-plane artifacts:
   - `plan.json`
   - `trigger.json`
   - `registry.json` (from Phase 2)
