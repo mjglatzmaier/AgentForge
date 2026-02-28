@@ -186,3 +186,114 @@ def test_synthesize_digest_rejects_invalid_citations(
                 "config": {"top_k": 1},
             }
         )
+
+
+def test_verify_digest_citations_writes_report_with_failures(tmp_path: Path) -> None:
+    docs = [
+        {
+            "doc_id": "doc-1",
+            "title": "Agent Eval",
+            "url": "https://example.com/1",
+            "summary": "summary 1",
+            "published": "2026-01-01",
+            "source": "arxiv",
+            "score": 2.0,
+        }
+    ]
+    digest = {
+        "title": "Research Digest",
+        "generated_at": "2026-01-03T00:00:00Z",
+        "items": [
+            {
+                "doc_id": "doc-1",
+                "title": "Agent Eval",
+                "url": "https://example.com/1",
+                "summary": "summary 1",
+                "source": "arxiv",
+                "score": 2.0,
+                "citations": [],
+            },
+            {
+                "doc_id": "doc-1",
+                "title": "Agent Eval 2",
+                "url": "https://example.com/1b",
+                "summary": "summary 2",
+                "source": "arxiv",
+                "score": 1.0,
+                "citations": ["doc-unknown"],
+            },
+        ],
+    }
+
+    docs_path = tmp_path / "docs_ranked.json"
+    digest_path = tmp_path / "digest.json"
+    docs_path.write_text(json.dumps(docs), encoding="utf-8")
+    digest_path.write_text(json.dumps(digest), encoding="utf-8")
+
+    step_dir = tmp_path / "verify"
+    result = steps.verify_digest_citations(
+        {
+            "step_dir": str(step_dir),
+            "inputs": {
+                "digest_json": {"abs_path": str(digest_path)},
+                "docs_ranked": {"abs_path": str(docs_path)},
+            },
+        }
+    )
+
+    assert [output["name"] for output in result["outputs"]] == ["citation_report"]
+    report = json.loads((step_dir / "outputs" / "citation_report.json").read_text(encoding="utf-8"))
+    assert report["total_bullets"] == 2
+    assert report["bullets_missing_citations"] == 1
+    assert report["pass"] is False
+    assert report["invalid_doc_id_citations"][0]["invalid_citations"] == ["doc-unknown"]
+    assert result["metrics"]["pass"] == "false"
+
+
+def test_verify_digest_citations_writes_passing_report(tmp_path: Path) -> None:
+    docs = [
+        {
+            "doc_id": "doc-1",
+            "title": "Agent Eval",
+            "url": "https://example.com/1",
+            "summary": "summary 1",
+            "published": "2026-01-01",
+            "source": "arxiv",
+            "score": 2.0,
+        }
+    ]
+    digest = {
+        "title": "Research Digest",
+        "generated_at": "2026-01-03T00:00:00Z",
+        "items": [
+            {
+                "doc_id": "doc-1",
+                "title": "Agent Eval",
+                "url": "https://example.com/1",
+                "summary": "summary 1",
+                "source": "arxiv",
+                "score": 2.0,
+                "citations": ["doc-1"],
+            }
+        ],
+    }
+
+    docs_path = tmp_path / "docs_ranked.json"
+    digest_path = tmp_path / "digest.json"
+    docs_path.write_text(json.dumps(docs), encoding="utf-8")
+    digest_path.write_text(json.dumps(digest), encoding="utf-8")
+
+    step_dir = tmp_path / "verify_ok"
+    result = steps.verify_digest_citations(
+        {
+            "step_dir": str(step_dir),
+            "inputs": {
+                "digest_json": {"abs_path": str(digest_path)},
+                "docs_ranked": {"abs_path": str(docs_path)},
+            },
+        }
+    )
+    report = json.loads((step_dir / "outputs" / "citation_report.json").read_text(encoding="utf-8"))
+    assert report["pass"] is True
+    assert report["invalid_doc_id_citations"] == []
+    assert result["metrics"]["pass"] == "true"

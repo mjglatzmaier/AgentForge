@@ -698,9 +698,9 @@ Acceptance criteria:
 
 ---
 
-### 4.3 Verifier step (optional in v0.1, but recommended)
+- [X] 4.3 Verifier step (optional in v0.1, but recommended)
 
-Implement `verify_digest_citations`:
+- [X] Implement `verify_digest_citations`:
 
 Inputs:
 - `digest.json`

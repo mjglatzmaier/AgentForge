@@ -139,6 +139,48 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def verify_digest_citations(ctx: dict[str, Any]) -> dict[str, Any]:
+    digest_path = Path(_require_input(ctx, "digest_json")["abs_path"])
+    docs_path = Path(_require_input(ctx, "docs_ranked", "docs_normalized")["abs_path"])
+    digest = Digest.model_validate(json.loads(digest_path.read_text(encoding="utf-8")))
+    docs = [Doc.model_validate(item) for item in json.loads(docs_path.read_text(encoding="utf-8"))]
+    valid_doc_ids = {doc.doc_id for doc in docs}
+
+    missing_citations = 0
+    invalid_citation_entries: list[dict[str, Any]] = []
+    for item in digest.items:
+        citations = list(item.citations)
+        if not citations:
+            missing_citations += 1
+        invalid = [citation for citation in citations if citation not in valid_doc_ids]
+        if invalid:
+            invalid_citation_entries.append(
+                {"doc_id": item.doc_id, "invalid_citations": sorted(set(invalid))}
+            )
+
+    report = {
+        "total_bullets": len(digest.items),
+        "bullets_missing_citations": missing_citations,
+        "invalid_doc_id_citations": invalid_citation_entries,
+        "pass": missing_citations == 0 and len(invalid_citation_entries) == 0,
+    }
+
+    step_dir = Path(ctx["step_dir"])
+    outputs_dir = step_dir / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    (outputs_dir / "citation_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    return {
+        "outputs": [{"name": "citation_report", "type": "json", "path": "outputs/citation_report.json"}],
+        "metrics": {
+            "total_bullets": report["total_bullets"],
+            "bullets_missing_citations": report["bullets_missing_citations"],
+            "invalid_doc_id_citations": len(invalid_citation_entries),
+            "pass": "true" if report["pass"] else "false",
+        },
+    }
+
+
 def _with_config(ctx: dict[str, Any], updates: dict[str, int | None]) -> dict[str, Any]:
     merged_config = dict(ctx.get("config", {}))
     for key, value in updates.items():
