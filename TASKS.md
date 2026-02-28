@@ -422,17 +422,17 @@ Acceptance criteria:
 
 ## Phase 2.11: Cache Robustness Hardening
 
-- 2.11.0 Define cache scope:
+- [X] 2.11.0 Define cache scope:
     - Shared cache directory:
         runs/.cache/<pipeline_name>/
-- 2.11.1 On cache hit:
+- [X] 2.11.1 On cache hit:
     - Verify cached artifact files still exist.
     - Verify sha256 matches record.
     - If mismatch, treat as cache miss.
-- 2.11.2 Ensure:
+- [X] 2.11.2 Ensure:
     - Cache records include pipeline_name.
     - Cache key includes mode.
-- 2.11.3 Add tests:
+- [X] 2.11.3 Add tests:
     - Corrupted cache record triggers miss.
     - Different mode produces different cache key.
     - Cache never stores failed steps.

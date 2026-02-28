@@ -193,3 +193,29 @@ steps:
     manifest = load_manifest(run_dir / "manifest.json")
     assert [step.status for step in manifest.steps] == [StepStatus.FAILED]
     assert manifest.artifacts == []
+
+
+def test_failed_step_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module_name = f"fake_steps_{uuid4().hex}"
+    _write_module(tmp_path, module_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        f"""
+name: fail_only_pipeline
+steps:
+  - id: fail
+    kind: tool
+    ref: {module_name}:fail_step
+    outputs: [broken]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Pipeline execution failed at step 'fail'"):
+        run_pipeline(pipeline_path, tmp_path, Mode.PROD)
+
+    cache_dir = tmp_path / "runs" / ".cache" / "fail_only_pipeline"
+    if cache_dir.exists():
+        assert list(cache_dir.glob("*.json")) == []
