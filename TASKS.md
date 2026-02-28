@@ -399,17 +399,17 @@ Acceptance criteria:
 
 ## Phase 2.10: Failure Semantics and Determinism Guarantees
 
-- 2.10.0 Define failure behavior:
+- [X] 2.10.0 Define failure behavior:
     - On exception:
         - StepStatus = failed
         - meta.json written
         - Manifest updated with StepResult
         - Pipeline execution halts.
     - Failed steps are never cached.
-- 2.10.1 Ensure:
+- [X] 2.10.1 Ensure:
     - sha256 mismatch triggers failure.
     - Manifest writes are atomic.
-- 2.10.2 Add tests:
+- [X] 2.10.2 Add tests:
     - Tool raising exception marks step failed.
     - No artifacts registered on failure.
     - Subsequent steps not executed.

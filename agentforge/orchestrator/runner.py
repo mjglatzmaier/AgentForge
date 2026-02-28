@@ -109,6 +109,7 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                     step_dir=step_dir,
                     run_dir=layout.run_dir,
                 )
+                _assert_artifact_hashes(artifacts=artifacts, run_dir=layout.run_dir)
                 step_logger.info("Cache hit for step '%s' with key=%s", step.id, cache_key)
                 step_result = StepResult(
                     step_id=step.id,
@@ -142,20 +143,7 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 step_dir=step_dir,
                 run_dir=layout.run_dir,
             )
-            cache_outputs = _copy_outputs_into_cache(
-                artifacts=artifacts,
-                base_path=base_path,
-                cache_key=cache_key,
-                pipeline_name=pipeline.name,
-                run_dir=layout.run_dir,
-                step_id=step.id,
-            )
-            save_cache_record(
-                base_dir=base_path,
-                pipeline_name=pipeline.name,
-                cache_key=cache_key,
-                outputs=cache_outputs,
-            )
+            _assert_artifact_hashes(artifacts=artifacts, run_dir=layout.run_dir)
 
             step_result = StepResult(
                 step_id=step.id,
@@ -169,6 +157,23 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
             register_artifacts(manifest, artifacts)
             save_manifest(layout.manifest_json, manifest)
             _write_meta_json(step_dir=step_dir, payload=step_result.model_dump(mode="json"))
+            try:
+                cache_outputs = _copy_outputs_into_cache(
+                    artifacts=artifacts,
+                    base_path=base_path,
+                    cache_key=cache_key,
+                    pipeline_name=pipeline.name,
+                    run_dir=layout.run_dir,
+                    step_id=step.id,
+                )
+                save_cache_record(
+                    base_dir=base_path,
+                    pipeline_name=pipeline.name,
+                    cache_key=cache_key,
+                    outputs=cache_outputs,
+                )
+            except Exception as cache_exc:
+                step_logger.warning("Cache write skipped for step '%s': %s", step.id, cache_exc)
         except Exception as exc:
             step_result = StepResult(
                 step_id=step.id,
@@ -321,6 +326,16 @@ def _materialize_step_artifacts(
         existing_names.add(output_name)
 
     return artifacts
+
+
+def _assert_artifact_hashes(*, artifacts: list[ArtifactRef], run_dir: Path) -> None:
+    for artifact in artifacts:
+        artifact_file = (run_dir / artifact.path).resolve()
+        actual_sha = sha256_file(artifact_file)
+        if actual_sha != artifact.sha256:
+            raise ValueError(
+                f"Artifact sha256 mismatch for '{artifact.name}': expected {artifact.sha256}, got {actual_sha}"
+            )
 
 
 def _materialize_cached_artifacts(
