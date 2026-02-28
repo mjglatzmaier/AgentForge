@@ -93,7 +93,7 @@ You are working in the AgentForge repository.
 Use model: GPT-5.3-Codex.
 
 Task:
-Complete EXACTLY the following task ID: [Phase 1 (1.1)]
+Complete EXACTLY the following task ID: [Phase 1 (1.2)]
 Source of truth file: tasks_refactor3.md (use what the task references).
 Do NOT implement anything beyond this task.
 
@@ -122,4 +122,4 @@ D) Suggested Conventional Commit message (title + body).
 E) Exact checkbox lines (copy/paste) that should be marked complete in the source task file.
 F) Whether docs/architecture.md or .github/copilot-instructions.md require updates (yes/no + why).
 
-Now implement [Phase 1 (1.1)].
+Now implement [Phase 1 (1.2)].

@@ -85,6 +85,93 @@ class TriggerSpec(BaseModel):
         return self
 
 
+class ControlNode(BaseModel):
+    """Minimal DAG node descriptor for control-plan validation."""
+
+    node_id: str
+    depends_on: list[str] = Field(default_factory=list)
+
+    @field_validator("node_id")
+    @classmethod
+    def validate_node_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("node_id must be non-empty.")
+        return normalized
+
+    @field_validator("depends_on")
+    @classmethod
+    def validate_depends_on(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for dependency in value:
+            dep_id = dependency.strip()
+            if not dep_id:
+                raise ValueError("depends_on entries must be non-empty.")
+            normalized.append(dep_id)
+        return normalized
+
+
+class ControlPlan(BaseModel):
+    """Typed control-plane DAG plan with dependency validation."""
+
+    plan_id: str
+    nodes: list[ControlNode]
+    max_parallel: int = 1
+    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
+    trigger: TriggerSpec
+
+    @field_validator("plan_id")
+    @classmethod
+    def validate_plan_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("plan_id must be non-empty.")
+        return normalized
+
+    @field_validator("max_parallel")
+    @classmethod
+    def validate_max_parallel(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_parallel must be >= 1.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_dag(self) -> "ControlPlan":
+        node_ids = [node.node_id for node in self.nodes]
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("ControlPlan node_id values must be unique.")
+
+        id_set = set(node_ids)
+        adjacency: dict[str, list[str]] = {}
+        for node in self.nodes:
+            if node.node_id in node.depends_on:
+                raise ValueError(f"Node '{node.node_id}' cannot depend on itself.")
+            missing = [dep for dep in node.depends_on if dep not in id_set]
+            if missing:
+                raise ValueError(
+                    f"Node '{node.node_id}' depends_on unknown node(s): {missing}"
+                )
+            adjacency[node.node_id] = list(node.depends_on)
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def _visit(node_id: str) -> None:
+            if node_id in visited:
+                return
+            if node_id in visiting:
+                raise ValueError("ControlPlan dependencies contain a cycle.")
+            visiting.add(node_id)
+            for dependency in adjacency[node_id]:
+                _visit(dependency)
+            visiting.remove(node_id)
+            visited.add(node_id)
+
+        for node_id in node_ids:
+            _visit(node_id)
+        return self
+
+
 class RunConfig(BaseModel):
     """Immutable run metadata captured at pipeline start."""
 

@@ -204,7 +204,7 @@ Acceptance criteria:
   - `source: str|None`
   - `request_artifact: str|None`
   - `metadata: dict`
-- [ ] 1.2 Implement `ControlPlan` (DAG v0):
+- [X] 1.2 Implement `ControlPlan` (DAG v0):
   - `plan_id`
   - `nodes: list[ControlNode]`
   - `max_parallel`
