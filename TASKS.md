@@ -463,14 +463,14 @@ Acceptance criteria:
 
 ## Phase 2.13: CLI Entry Point Specification
 
-- 2.13.0 Define minimal CLI:
+- [X] 2.13.0 Define minimal CLI:
     - agentforge run <pipeline.yaml> [--mode prod|debug|eval]
     - agentforge eval <run_id>
-- 2.13.1 Define exit codes:
+- [X] 2.13.1 Define exit codes:
     - 0 = success
     - 1 = validation error
     - 2 = runtime failure
-- 2.13.2 Add integration test:
+- [X] 2.13.2 Add integration test:
     - CLI invocation creates run directory successfully.
 
 Acceptance criteria:

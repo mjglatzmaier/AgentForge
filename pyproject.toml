@@ -26,6 +26,9 @@ dev = [
   "mypy>=1.10",
 ]
 
+[project.scripts]
+agentforge = "agentforge.cli:main"
+
 [tool.pytest.ini_options]
 testpaths = ["agentforge", "agents", "eval"]
 pythonpath=["."]

@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+def test_cli_run_invocation_creates_run_directory(tmp_path: Path) -> None:
+    pipeline = tmp_path / "pipeline.yaml"
+    pipeline.write_text(
+        """
+name: cli_pipeline
+steps: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "agentforge", "run", str(pipeline), "--mode", "prod", "--base-dir", str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    run_id = completed.stdout.strip()
+    run_dir = tmp_path / "runs" / run_id
+    assert run_dir.is_dir()
+
+
+def test_cli_validation_error_uses_exit_code_one(tmp_path: Path) -> None:
+    missing_pipeline = tmp_path / "missing.yaml"
+    completed = subprocess.run(
+        [sys.executable, "-m", "agentforge", "run", str(missing_pipeline)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+
+
+def test_cli_runtime_error_uses_exit_code_two(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [sys.executable, "-m", "agentforge", "eval", "run-001", "--base-dir", str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 2
