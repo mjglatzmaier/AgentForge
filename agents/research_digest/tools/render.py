@@ -29,6 +29,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 source=doc.source,
                 score=doc.score,
                 published=doc.published,
+                citations=[doc.doc_id],
             )
             for doc in selected_docs
         ],

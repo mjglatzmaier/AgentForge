@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from agentforge.providers.base import LlmResult, ProviderValidationError
 from agents.research_digest.src import steps
+from agents.research_digest.tools.models import Digest, DigestItem
 
 
 def test_normalize_wrapper_writes_expected_output_and_contract(tmp_path: Path) -> None:
@@ -60,3 +64,125 @@ def test_normalize_wrapper_writes_expected_output_and_contract(tmp_path: Path) -
     payload = json.loads(written.read_text(encoding="utf-8"))
     assert len(payload) == 2
     assert [item["url"] for item in payload] == ["https://example.com/a", "https://example.com/b"]
+
+
+def test_synthesize_digest_writes_digest_json_and_debug_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docs = [
+        {
+            "doc_id": "doc-1",
+            "title": "Agent Eval",
+            "url": "https://example.com/1",
+            "summary": "summary 1",
+            "published": "2026-01-01",
+            "source": "arxiv",
+            "score": 2.0,
+        },
+        {
+            "doc_id": "doc-2",
+            "title": "Reasoning",
+            "url": "https://example.com/2",
+            "summary": "summary 2",
+            "published": "2026-01-02",
+            "source": "rss",
+            "score": 1.0,
+        },
+    ]
+    docs_path = tmp_path / "docs_ranked.json"
+    docs_path.write_text(json.dumps(docs), encoding="utf-8")
+
+    digest = Digest(
+        generated_at="2026-01-03T00:00:00Z",
+        items=[
+            DigestItem(
+                doc_id="doc-1",
+                title="Agent Eval",
+                url="https://example.com/1",
+                summary="summary 1",
+                source="arxiv",
+                score=2.0,
+                citations=["doc-1"],
+            )
+        ],
+    )
+
+    class _Provider:
+        def generate_json(self, *args, **kwargs):
+            return LlmResult(
+                parsed=digest,
+                raw_text=digest.model_dump_json(),
+                provider="stub",
+                model="stub-model",
+            )
+
+    monkeypatch.setattr(steps, "_resolve_provider", lambda _ctx: _Provider())
+    step_dir = tmp_path / "synthesize"
+    result = steps.synthesize_digest(
+        {
+            "step_dir": str(step_dir),
+            "inputs": {"docs_ranked": {"abs_path": str(docs_path)}},
+            "config": {"top_k": 2},
+            "mode": "debug",
+        }
+    )
+
+    assert [output["name"] for output in result["outputs"]] == ["digest_json"]
+    assert (step_dir / "outputs" / "digest.json").is_file()
+    assert (step_dir / "outputs" / "synthesis_prompt.txt").is_file()
+    assert (step_dir / "outputs" / "raw_response.txt").is_file()
+    digest_json = json.loads((step_dir / "outputs" / "digest.json").read_text(encoding="utf-8"))
+    assert digest_json["items"][0]["citations"] == ["doc-1"]
+
+
+def test_synthesize_digest_rejects_invalid_citations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docs = [
+        {
+            "doc_id": "doc-1",
+            "title": "Agent Eval",
+            "url": "https://example.com/1",
+            "summary": "summary 1",
+            "published": "2026-01-01",
+            "source": "arxiv",
+            "score": 2.0,
+        }
+    ]
+    docs_path = tmp_path / "docs_ranked.json"
+    docs_path.write_text(json.dumps(docs), encoding="utf-8")
+
+    digest = Digest(
+        generated_at="2026-01-03T00:00:00Z",
+        items=[
+            DigestItem(
+                doc_id="doc-1",
+                title="Agent Eval",
+                url="https://example.com/1",
+                summary="summary 1",
+                source="arxiv",
+                score=2.0,
+                citations=["doc-unknown"],
+            )
+        ],
+    )
+
+    class _Provider:
+        def generate_json(self, *args, **kwargs):
+            return LlmResult(
+                parsed=digest,
+                raw_text=digest.model_dump_json(),
+                provider="stub",
+                model="stub-model",
+            )
+
+    monkeypatch.setattr(steps, "_resolve_provider", lambda _ctx: _Provider())
+
+    with pytest.raises(ProviderValidationError, match="invalid citations"):
+        steps.synthesize_digest(
+            {
+                "step_dir": str(tmp_path / "synthesize"),
+                "inputs": {"docs_ranked": {"abs_path": str(docs_path)}},
+                "config": {"top_k": 1},
+            }
+        )

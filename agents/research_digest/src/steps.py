@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agentforge.providers import ClaudeProvider, OpenAIProvider, ProviderValidationError
 from agents.research_digest.tools import arxiv as arxiv_tool
 from agents.research_digest.tools import dedupe_rank as dedupe_rank_tool
 from agents.research_digest.tools import normalize as normalize_tool
 from agents.research_digest.tools import render as render_tool
 from agents.research_digest.tools import rss as rss_tool
+from agents.research_digest.tools.models import Digest, DigestItem, Doc
 
 
 def fetch_arxiv(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -91,6 +94,51 @@ def render(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
+    docs_path = Path(_require_input(ctx, "docs_ranked", "docs_normalized")["abs_path"])
+    docs = [Doc.model_validate(item) for item in json.loads(docs_path.read_text(encoding="utf-8"))]
+    top_k = int(ctx.get("config", {}).get("top_k", 10))
+    selected_docs = docs[:top_k] if top_k >= 0 else docs
+    valid_doc_ids = {doc.doc_id for doc in selected_docs}
+
+    prompt = _build_synthesis_prompt(selected_docs)
+    provider = _resolve_provider(ctx)
+    result = provider.generate_json(
+        prompt=prompt,
+        response_model=Digest,
+        system_prompt=(
+            "You are a research summarization assistant. "
+            "Return only strict JSON. Every digest item must include non-empty citations."
+        ),
+        model=ctx.get("config", {}).get("model"),
+        temperature=ctx.get("config", {}).get("temperature"),
+        max_output_tokens=ctx.get("config", {}).get("max_output_tokens"),
+        seed=ctx.get("config", {}).get("seed"),
+        timeout_s=ctx.get("config", {}).get("timeout_s"),
+        metadata={"run_id": ctx.get("run_id", ""), "step_id": ctx.get("step_id", "synthesize_digest")},
+    )
+
+    digest = _coerce_digest(result.parsed)
+    _validate_digest_citations(digest, valid_doc_ids)
+
+    step_dir = Path(ctx["step_dir"])
+    outputs_dir = step_dir / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    (outputs_dir / "digest.json").write_text(
+        json.dumps(digest.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+
+    if ctx.get("mode") == "debug":
+        (outputs_dir / "synthesis_prompt.txt").write_text(prompt, encoding="utf-8")
+        (outputs_dir / "raw_response.txt").write_text(result.raw_text, encoding="utf-8")
+
+    return {
+        "outputs": [{"name": "digest_json", "type": "json", "path": "outputs/digest.json"}],
+        "metrics": {"count": len(digest.items), "cited_items": len(digest.items)},
+    }
+
+
 def _with_config(ctx: dict[str, Any], updates: dict[str, int | None]) -> dict[str, Any]:
     merged_config = dict(ctx.get("config", {}))
     for key, value in updates.items():
@@ -150,3 +198,51 @@ def _require_input(ctx: dict[str, Any], primary: str, legacy: str | None = None)
         return dict(entry)
 
     raise KeyError(f"Missing required input artifact: {primary}")
+
+
+def _resolve_provider(ctx: dict[str, Any]) -> OpenAIProvider | ClaudeProvider:
+    provider_name = str(ctx.get("config", {}).get("provider", "openai")).lower()
+    if provider_name == "openai":
+        return OpenAIProvider()
+    if provider_name == "claude":
+        return ClaudeProvider()
+    raise ValueError(f"Unsupported provider: {provider_name}")
+
+
+def _build_synthesis_prompt(docs: list[Doc]) -> str:
+    lines = [
+        "Produce a JSON digest.",
+        "Rules:",
+        "- Every item must include citations with at least one doc_id.",
+        "- Use only provided doc_ids for citations.",
+        "",
+        "Documents:",
+    ]
+    for doc in docs:
+        lines.append(
+            f"- doc_id={doc.doc_id} | title={doc.title} | source={doc.source} | "
+            f"published={doc.published or ''} | url={doc.url} | summary={doc.summary}"
+        )
+    return "\n".join(lines)
+
+
+def _coerce_digest(parsed: Any) -> Digest:
+    if isinstance(parsed, Digest):
+        digest = parsed
+    elif isinstance(parsed, dict):
+        digest = Digest.model_validate(parsed)
+    else:
+        raise ProviderValidationError(f"Unsupported parsed payload type: {type(parsed).__name__}")
+    if not digest.generated_at:
+        digest.generated_at = datetime.now(timezone.utc).isoformat()
+    return digest
+
+
+def _validate_digest_citations(digest: Digest, valid_doc_ids: set[str]) -> None:
+    for item in digest.items:
+        item_model = DigestItem.model_validate(item)
+        if not item_model.citations:
+            raise ProviderValidationError("Digest item is missing citations.")
+        invalid = [citation for citation in item_model.citations if citation not in valid_doc_ids]
+        if invalid:
+            raise ProviderValidationError(f"Digest item has invalid citations: {invalid}")

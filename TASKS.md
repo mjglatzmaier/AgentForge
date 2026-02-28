@@ -675,9 +675,9 @@ Acceptance criteria:
 
 ---
 
-### 4.2 LLM-backed synthesize step (Digest JSON)
+- [X] 4.2 LLM-backed synthesize step (Digest JSON)
 
-Implement `agents/research_digest/src/steps.py:synthesize_digest` (or similar):
+- [X] Implement `agents/research_digest/src/steps.py:synthesize_digest` (or similar):
 
 Inputs:
 - top-k normalized docs artifact (JSON list of Doc models)
