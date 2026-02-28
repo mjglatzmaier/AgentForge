@@ -215,7 +215,7 @@ Acceptance criteria:
   - `node_id`, `agent_id`, `operation`, `inputs`, `outputs`, `depends_on`
   - `state` enum (pending/ready/running/succeeded/failed/paused/cancelled)
   - `retry_policy`, `timeout_s`, `metadata`
-- [ ] 1.4 Implement control event log:
+- [X] 1.4 Implement control event log:
   - `runs/<run_id>/control/events.jsonl` append-only
   - `ControlEvent` schema with `schema_version` + replay rules
 - [ ] 1.5 Persist control-plane artifacts:

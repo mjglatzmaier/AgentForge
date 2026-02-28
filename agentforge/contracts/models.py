@@ -97,6 +97,47 @@ class ControlNodeState(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ControlEventType(str, Enum):
+    """Control-plane lifecycle event type."""
+
+    PLAN_CREATED = "plan_created"
+    NODE_READY = "node_ready"
+    NODE_STARTED = "node_started"
+    NODE_SUCCEEDED = "node_succeeded"
+    NODE_FAILED = "node_failed"
+    PAUSE_REQUESTED = "pause_requested"
+    RESUME_REQUESTED = "resume_requested"
+    RESTART_REQUESTED = "restart_requested"
+
+
+class ControlEvent(BaseModel):
+    """Append-only control-plane event used for replay."""
+
+    schema_version: int = 1
+    event_id: str
+    timestamp_utc: AwareDatetime
+    event_type: ControlEventType
+    node_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Unsupported ControlEvent schema_version.")
+        return value
+
+    @field_validator("event_id", "node_id")
+    @classmethod
+    def validate_optional_non_empty_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ControlEvent string fields must be non-empty when provided.")
+        return normalized
+
+
 class ControlNode(BaseModel):
     """Control-plane node contract for execution planning."""
 
