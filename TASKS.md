@@ -500,12 +500,12 @@ Acceptance criteria (Phase 2):
 - meta.json files are valid JSON (never empty) for every step.
 
 ## Phase 3: Research Digest Agent (tools only, no LLM yet)
-- 3.0 Implement tools under agents/research_digest/tools:
-    - arxiv.py: fetch list of papers (title, authors, abstract, url, published)
-    - rss.py: fetch RSS items (title, url, snippet, published)
-    - normalize.py: map all sources to a common Doc model
-    - dedupe_rank.py: dedupe by url/hash, then rank by simple keyword score
-    - render.py: render markdown from a structured Digest model
+- [X] 3.0 Implement tools under agents/research_digest/tools:
+    - [X] arxiv.py: fetch list of papers (title, authors, abstract, url, published)
+    - [X] rss.py: fetch RSS items (title, url, snippet, published)
+    - [X] normalize.py: map all sources to a common Doc model
+    - [X] dedupe_rank.py: dedupe by url/hash, then rank by simple keyword score
+    - [X] render.py: render markdown from a structured Digest model
 - 3.1 Implement agent-specific step wrappers in agents/research_digest/src/steps.py
 - 3.2 Provide a working pipeline YAML in pipelines/research_digest.yaml that runs:
     fetch_arxiv -> fetch_rss -> normalize -> dedupe_rank -> render
