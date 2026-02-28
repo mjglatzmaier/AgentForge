@@ -36,6 +36,7 @@ class DigestItem(BaseModel):
     source: str
     score: float
     published: str | None = None
+    citations: list[str] = Field(default_factory=list)
 
 
 class Digest(BaseModel):
