@@ -218,7 +218,7 @@ Acceptance criteria:
 - [X] 1.4 Implement control event log:
   - `runs/<run_id>/control/events.jsonl` append-only
   - `ControlEvent` schema with `schema_version` + replay rules
-- [ ] 1.5 Persist control-plane artifacts:
+- [X] 1.5 Persist control-plane artifacts:
   - `plan.json`
   - `trigger.json`
   - `registry.json` (from Phase 2)
