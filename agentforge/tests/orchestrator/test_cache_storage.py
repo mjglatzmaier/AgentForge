@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from agentforge.contracts.models import ArtifactRef
@@ -24,8 +25,10 @@ def test_cache_record_round_trip(tmp_path: Path) -> None:
         outputs=artifacts,
     )
     loaded = load_cache_record(tmp_path, "research_digest", "cache-key-1")
+    raw = json.loads(cache_file.read_text(encoding="utf-8"))
 
     assert cache_file == tmp_path / "runs" / ".cache" / "research_digest" / "cache-key-1.json"
+    assert raw["pipeline_name"] == "research_digest"
     assert loaded == artifacts
 
 

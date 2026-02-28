@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from agentforge.contracts.models import Mode, StepStatus
+import agentforge.orchestrator.runner as runner_module
 from agentforge.orchestrator.runner import run_pipeline
 from agentforge.storage.manifest import load_manifest
 
@@ -149,3 +150,72 @@ steps:
     manifest = load_manifest(run_dir / "manifest.json")
     assert [step.status for step in manifest.steps] == [StepStatus.SUCCESS, StepStatus.FAILED]
     assert [artifact.name for artifact in manifest.artifacts] == ["docs"]
+
+
+def test_sha256_mismatch_triggers_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = f"fake_steps_{uuid4().hex}"
+    _write_module(tmp_path, module_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        f"""
+name: mismatch_pipeline
+steps:
+  - id: one
+    kind: tool
+    ref: {module_name}:step_one
+    outputs: [docs]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    call_count = {"n": 0}
+
+    def _fake_sha256_file(path: Path | str) -> str:
+        call_count["n"] += 1
+        return "good-sha" if call_count["n"] == 1 else "bad-sha"
+
+    monkeypatch.setattr(runner_module, "sha256_file", _fake_sha256_file)
+
+    with pytest.raises(RuntimeError, match="Pipeline execution failed at step 'one'"):
+        run_pipeline(pipeline_path, tmp_path, Mode.DEBUG)
+
+    run_dirs = [path for path in (tmp_path / "runs").iterdir() if path.name != ".cache"]
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+    meta = json.loads((run_dir / "steps" / "00_one" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["status"] == StepStatus.FAILED.value
+    assert "sha256 mismatch" in meta["error"]["message"]
+
+    manifest = load_manifest(run_dir / "manifest.json")
+    assert [step.status for step in manifest.steps] == [StepStatus.FAILED]
+    assert manifest.artifacts == []
+
+
+def test_failed_step_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module_name = f"fake_steps_{uuid4().hex}"
+    _write_module(tmp_path, module_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        f"""
+name: fail_only_pipeline
+steps:
+  - id: fail
+    kind: tool
+    ref: {module_name}:fail_step
+    outputs: [broken]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Pipeline execution failed at step 'fail'"):
+        run_pipeline(pipeline_path, tmp_path, Mode.PROD)
+
+    cache_dir = tmp_path / "runs" / ".cache" / "fail_only_pipeline"
+    if cache_dir.exists():
+        assert list(cache_dir.glob("*.json")) == []

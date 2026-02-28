@@ -44,9 +44,14 @@ Each `StepSpec.ref` resolves to a Python callable with signature:
 
 `(context: dict) -> dict[str, Any]`
 
-The orchestrator validates step output keys against `StepSpec.outputs` before any artifact handling:
+Each step return payload must be a dict with:
 
- - Returned keys must exactly match declared output names.
+ - `outputs`: list of objects with keys `name`, `type`, `path`
+ - `metrics`: optional dict with scalar JSON values (`int | float | str`)
+
+The orchestrator validates output names against `StepSpec.outputs` before any artifact registration:
+
+ - Returned output names must exactly match declared output names.
  - Undeclared outputs are rejected.
  - Missing declared outputs are rejected.
  - Empty output is valid only when `StepSpec.outputs` is empty.
@@ -129,7 +134,24 @@ Agents and pipelines support modes:
  - debug: verbose logging, prompt storage, intermediate artifacts
  - eval: deterministic settings, extended metadata
 
-Modes must not change core semantic behavior.
+Modes affect only logging verbosity and metadata fields. Modes must not change
+semantic artifact outputs. The orchestrator does not pass mode into step tool
+context unless explicitly requested by step configuration.
+
+## Runtime Executor Boundary
+
+Step execution is abstracted behind a `StepExecutor` runtime interface:
+
+ - `execute(step, context) -> StepResult`
+
+Current implementation:
+
+ - `InProcExecutor` (Python callable execution in the same process)
+
+Extension path (without orchestrator refactor):
+
+ - `SubprocessExecutor` for isolated process execution
+ - `ContainerExecutor` for containerized execution
 
 ## Design Constraints
 

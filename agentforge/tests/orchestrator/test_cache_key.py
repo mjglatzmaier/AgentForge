@@ -71,3 +71,20 @@ def test_compute_step_cache_key_changes_when_input_hash_changes() -> None:
     key_b = compute_step_cache_key(step, Mode.EVAL, artifacts_b)
 
     assert key_a != key_b
+
+
+def test_compute_step_cache_key_changes_when_mode_changes() -> None:
+    step = StepSpec(
+        id="render",
+        kind=StepKind.TOOL,
+        ref="agents.research_digest.tools.render:run",
+        inputs=["docs_ranked"],
+        outputs=["digest_md"],
+        config={},
+    )
+    artifacts = [_artifact("docs_ranked", "hash-a")]
+
+    key_prod = compute_step_cache_key(step, Mode.PROD, artifacts)
+    key_debug = compute_step_cache_key(step, Mode.DEBUG, artifacts)
+
+    assert key_prod != key_debug

@@ -109,3 +109,41 @@ steps:
     assert counter_file.read_text(encoding="utf-8") == "2"
     assert [step.status for step in manifest_two.steps] == [StepStatus.SUCCESS]
     assert run_two_output == "value-2"
+
+
+def test_corrupted_cache_record_triggers_reexecution(tmp_path: Path, monkeypatch) -> None:
+    module_name = f"cache_steps_{uuid4().hex}"
+    _write_cache_step_module(tmp_path, module_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    counter_file = tmp_path / "counter.txt"
+    pipeline_path = tmp_path / "pipeline.yaml"
+    pipeline_path.write_text(
+        f"""
+name: cache_pipeline
+steps:
+  - id: produce
+    kind: tool
+    ref: {module_name}:produce
+    outputs: [value]
+    config:
+      counter_file: "{counter_file.as_posix()}"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    _ = run_pipeline(pipeline_path, tmp_path, Mode.PROD)
+
+    cache_records = list((tmp_path / "runs" / ".cache" / "cache_pipeline").glob("*.json"))
+    assert len(cache_records) == 1
+    cache_records[0].write_text("{not valid json", encoding="utf-8")
+
+    run_two = run_pipeline(pipeline_path, tmp_path, Mode.PROD)
+    manifest_two = load_manifest(tmp_path / "runs" / run_two / "manifest.json")
+    run_two_output = (
+        tmp_path / "runs" / run_two / "steps" / "00_produce" / "outputs" / "value.txt"
+    ).read_text(encoding="utf-8")
+
+    assert counter_file.read_text(encoding="utf-8") == "2"
+    assert [step.status for step in manifest_two.steps] == [StepStatus.SUCCESS]
+    assert run_two_output == "value-2"

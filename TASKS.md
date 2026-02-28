@@ -358,14 +358,14 @@ Acceptance criteria:
 
 ## Phase 2.8: Artifact Identity and Naming Rules
 
-- 2.8.0 Define artifact naming invariant:
+- [X] 2.8.0 Define artifact naming invariant:
     - ArtifactRef.name must be globally unique within a run.
     - producer_step_id stored as metadata only.
     - Manifest lookup by name must be deterministic.
-- 2.8.1 Enforce:
+- [X] 2.8.1 Enforce:
     - register_artifact rejects duplicate artifact names.
     - Artifact paths must be relative to run root.
-- 2.8.2 Add tests:
+- [X] 2.8.2 Add tests:
     - Duplicate artifact names raise error.
     - Absolute paths rejected.
     - Manifest round-trip preserves relative paths.
@@ -378,15 +378,15 @@ Acceptance criteria:
 
 ## Phase 2.9: Step Execution Contract Formalization
 
-- 2.9.0 Define strict MVP tool contract:
+- [X] 2.9.0 Define strict MVP tool contract:
     - Callable signature:
         (context: dict) -> dict[str, Any]
     - Returned keys must match StepSpec.outputs.
     - Returning undeclared outputs raises error.
     - Missing declared outputs raises error.
-- 2.9.1 Document contract in docs/architecture.md.
-- 2.9.2 Add validation layer in runner before artifact registration.
-- 2.9.3 Add tests:
+- [X] 2.9.1 Document contract in docs/architecture.md.
+- [X] 2.9.2 Add validation layer in runner before artifact registration.
+- [X] 2.9.3 Add tests:
     - Undeclared output rejected.
     - Missing declared output rejected.
     - Empty output allowed only if outputs list empty.
@@ -399,17 +399,17 @@ Acceptance criteria:
 
 ## Phase 2.10: Failure Semantics and Determinism Guarantees
 
-- 2.10.0 Define failure behavior:
+- [X] 2.10.0 Define failure behavior:
     - On exception:
         - StepStatus = failed
         - meta.json written
         - Manifest updated with StepResult
         - Pipeline execution halts.
     - Failed steps are never cached.
-- 2.10.1 Ensure:
+- [X] 2.10.1 Ensure:
     - sha256 mismatch triggers failure.
     - Manifest writes are atomic.
-- 2.10.2 Add tests:
+- [X] 2.10.2 Add tests:
     - Tool raising exception marks step failed.
     - No artifacts registered on failure.
     - Subsequent steps not executed.
@@ -422,17 +422,17 @@ Acceptance criteria:
 
 ## Phase 2.11: Cache Robustness Hardening
 
-- 2.11.0 Define cache scope:
+- [X] 2.11.0 Define cache scope:
     - Shared cache directory:
         runs/.cache/<pipeline_name>/
-- 2.11.1 On cache hit:
+- [X] 2.11.1 On cache hit:
     - Verify cached artifact files still exist.
     - Verify sha256 matches record.
     - If mismatch, treat as cache miss.
-- 2.11.2 Ensure:
+- [X] 2.11.2 Ensure:
     - Cache records include pipeline_name.
     - Cache key includes mode.
-- 2.11.3 Add tests:
+- [X] 2.11.3 Add tests:
     - Corrupted cache record triggers miss.
     - Different mode produces different cache key.
     - Cache never stores failed steps.
@@ -445,14 +445,14 @@ Acceptance criteria:
 
 ## Phase 2.12: Mode Determinism Verification
 
-- 2.12.0 Add test:
+- [X] 2.12.0 Add test:
     - Same pipeline in prod vs debug produces identical artifacts (except metadata/logs).
-- 2.12.1 Define:
+- [X] 2.12.1 Define:
     - Mode affects only:
         - logging verbosity
         - metadata fields
     - Mode must not change semantic artifact outputs.
-- 2.12.2 Add assertion in runner:
+- [X] 2.12.2 Add assertion in runner:
     - mode not passed into tool unless explicitly requested.
 
 Acceptance criteria:
@@ -463,14 +463,14 @@ Acceptance criteria:
 
 ## Phase 2.13: CLI Entry Point Specification
 
-- 2.13.0 Define minimal CLI:
+- [X] 2.13.0 Define minimal CLI:
     - agentforge run <pipeline.yaml> [--mode prod|debug|eval]
     - agentforge eval <run_id>
-- 2.13.1 Define exit codes:
+- [X] 2.13.1 Define exit codes:
     - 0 = success
     - 1 = validation error
     - 2 = runtime failure
-- 2.13.2 Add integration test:
+- [X] 2.13.2 Add integration test:
     - CLI invocation creates run directory successfully.
 
 Acceptance criteria:
@@ -481,11 +481,11 @@ Acceptance criteria:
 
 ## Phase 2.14: Runtime Abstraction Boundary (Future-proofing)
 
-- 2.14.0 Introduce execution interface:
+- [X] 2.14.0 Introduce execution interface:
     - StepExecutor base class
         - execute(step, context) -> StepResult
-- 2.14.1 Current implementation: InProcExecutor.
-- 2.14.2 Document extension path for:
+- [X] 2.14.1 Current implementation: InProcExecutor.
+- [X] 2.14.2 Document extension path for:
     - SubprocessExecutor
     - ContainerExecutor
 
