@@ -138,6 +138,124 @@ class ControlEvent(BaseModel):
         return normalized
 
 
+class AgentRuntimeKind(str, Enum):
+    """Supported runtime adapters for agent execution."""
+
+    PYTHON = "python"
+    COMMAND = "command"
+    CONTAINER = "container"
+
+
+class TerminalAccess(str, Enum):
+    """Terminal access level for agent execution policy."""
+
+    NONE = "none"
+    RESTRICTED = "restricted"
+
+
+class NetworkAccess(str, Enum):
+    """Network access level for agent execution policy."""
+
+    NONE = "none"
+    ALLOWLIST = "allowlist"
+
+
+class AgentRuntimeSpec(BaseModel):
+    """Runtime metadata for one agent spec."""
+
+    runtime: AgentRuntimeKind
+    entrypoint: str
+    cwd: str | None = None
+    timeout_s: float
+    max_concurrency: int
+
+    @field_validator("entrypoint", "cwd")
+    @classmethod
+    def validate_optional_non_empty_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Agent runtime string fields must be non-empty when provided.")
+        return normalized
+
+    @field_validator("timeout_s")
+    @classmethod
+    def validate_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("timeout_s must be > 0.")
+        return value
+
+    @field_validator("max_concurrency")
+    @classmethod
+    def validate_max_concurrency(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_concurrency must be >= 1.")
+        return value
+
+
+class OperationsPolicy(BaseModel):
+    """Execution guardrail policy for one agent."""
+
+    terminal_access: TerminalAccess
+    allowed_commands: list[str] = Field(default_factory=list)
+    fs_scope: list[str] = Field(default_factory=list)
+    network_access: NetworkAccess
+    network_allowlist: list[str] = Field(default_factory=list)
+
+    @field_validator("allowed_commands", "fs_scope", "network_allowlist")
+    @classmethod
+    def validate_string_lists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("OperationsPolicy list entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_network_policy(self) -> "OperationsPolicy":
+        if self.network_access is NetworkAccess.ALLOWLIST and not self.network_allowlist:
+            raise ValueError("network_allowlist is required when network_access='allowlist'.")
+        if self.network_access is NetworkAccess.NONE and self.network_allowlist:
+            raise ValueError("network_allowlist must be empty when network_access='none'.")
+        return self
+
+
+class AgentSpec(BaseModel):
+    """agent.yaml schema for a single agent package."""
+
+    agent_id: str
+    version: str
+    description: str
+    intents: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    input_contracts: list[str] = Field(default_factory=list)
+    output_contracts: list[str] = Field(default_factory=list)
+    runtime: AgentRuntimeSpec
+    operations_policy: OperationsPolicy
+
+    @field_validator("agent_id", "version", "description")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("AgentSpec required string fields must be non-empty.")
+        return normalized
+
+    @field_validator("intents", "tags", "input_contracts", "output_contracts")
+    @classmethod
+    def validate_metadata_lists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("AgentSpec list entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+
 class ControlNode(BaseModel):
     """Control-plane node contract for execution planning."""
 

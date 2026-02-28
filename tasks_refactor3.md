@@ -232,14 +232,14 @@ Acceptance criteria:
 
 ## Phase 2 — AgentSpec v1 + Agent Pack Discovery
 
-- [ ] 2.1 Define `AgentSpec` schema (`agent.yaml`):
+- [X] 2.1 Define `AgentSpec` schema (`agent.yaml`):
   - identity: `agent_id`, `version`, `description`
   - capability metadata: `intents`, `tags`
   - interfaces: `input_contracts`, `output_contracts`
   - runtime: `runtime`, `entrypoint`, `cwd`, `timeout_s`, `max_concurrency`
   - operations_policy: `terminal_access`, `allowed_commands`, `fs_scope`,
     `network_access`, `network_allowlist`
-- [ ] 2.2 Implement discovery:
+- [X] 2.2 Implement discovery:
   - `agents/` (demo)
   - `agents_packs/*/agents/` (submodules)
   - dirs from `AGENTFORGE_AGENT_PACKS_DIRS`
