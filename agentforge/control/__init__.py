@@ -1,5 +1,11 @@
 """Control-plane helpers."""
 
+from agentforge.control.adapters import (
+    CommandRuntimeAdapter,
+    ContainerRuntimeAdapter,
+    PythonRuntimeAdapter,
+    RuntimeAdapter,
+)
 from agentforge.control.discovery import discover_agent_spec_paths
 from agentforge.control.events import (
     append_control_event,
@@ -16,6 +22,10 @@ from agentforge.control.state import persist_control_artifacts
 
 __all__ = [
     "AgentRegistry",
+    "CommandRuntimeAdapter",
+    "ContainerRuntimeAdapter",
+    "PythonRuntimeAdapter",
+    "RuntimeAdapter",
     "append_control_event",
     "build_registry_snapshot",
     "discover_agent_spec_paths",
