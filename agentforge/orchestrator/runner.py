@@ -134,6 +134,10 @@ def run_pipeline(pipeline_path: str | Path, base_dir: str | Path, mode: Mode) ->
                 step=step,
                 step_dir=step_dir,
             )
+            if not bool(step.config.get("expose_mode_to_tool", False)) and "mode" in ctx:
+                raise AssertionError(
+                    f"Mode must not be passed to step '{step.id}' unless explicitly requested."
+                )
             returned = step_callable(ctx)
             outputs_payload, metrics = _validate_step_payload(step=step, returned=returned)
             artifacts = _materialize_step_artifacts(
@@ -222,15 +226,17 @@ def _build_step_context(
             "abs_path": str(input_abs),
         }
 
-    return {
+    context: dict[str, Any] = {
         "run_id": run_id,
         "run_dir": str(layout),
-        "mode": mode.value,
         "step_id": step.id,
         "step_dir": str(step_dir),
         "config": dict(step.config),
         "inputs": inputs,
     }
+    if bool(step.config.get("expose_mode_to_tool", False)):
+        context["mode"] = mode.value
+    return context
 
 
 def _resolve_input_artifacts(*, manifest: Manifest, step: StepSpec) -> list[ArtifactRef]:

@@ -445,14 +445,14 @@ Acceptance criteria:
 
 ## Phase 2.12: Mode Determinism Verification
 
-- 2.12.0 Add test:
+- [X] 2.12.0 Add test:
     - Same pipeline in prod vs debug produces identical artifacts (except metadata/logs).
-- 2.12.1 Define:
+- [X] 2.12.1 Define:
     - Mode affects only:
         - logging verbosity
         - metadata fields
     - Mode must not change semantic artifact outputs.
-- 2.12.2 Add assertion in runner:
+- [X] 2.12.2 Add assertion in runner:
     - mode not passed into tool unless explicitly requested.
 
 Acceptance criteria:

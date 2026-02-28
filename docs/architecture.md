@@ -134,7 +134,9 @@ Agents and pipelines support modes:
  - debug: verbose logging, prompt storage, intermediate artifacts
  - eval: deterministic settings, extended metadata
 
-Modes must not change core semantic behavior.
+Modes affect only logging verbosity and metadata fields. Modes must not change
+semantic artifact outputs. The orchestrator does not pass mode into step tool
+context unless explicitly requested by step configuration.
 
 ## Design Constraints
 
