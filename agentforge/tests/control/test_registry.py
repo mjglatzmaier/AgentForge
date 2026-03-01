@@ -17,7 +17,25 @@ def _write_agent_yaml(
     agent_id: str,
     intents: list[str],
     tags: list[str],
+    operations: list[str] | None = None,
 ) -> None:
+    operation_items = ["pipeline"] if operations is None else operations
+    if operation_items:
+        capability_lines = "\n".join(
+            ["  operations:"]
+            + [
+                "\n".join(
+                    [
+                        f"    - name: {name}",
+                        "      inputs: [request_json]",
+                        f"      outputs: [{name}_result]",
+                    ]
+                )
+                for name in operation_items
+            ]
+        )
+    else:
+        capability_lines = "  operations: []"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
@@ -30,9 +48,12 @@ input_contracts: [Req]
 output_contracts: [Res]
 runtime:
   runtime: python
+  type: python_subprocess
   entrypoint: agents.{agent_id}.entrypoint:run
   timeout_s: 30
   max_concurrency: 1
+capabilities:
+{capability_lines}
 operations_policy:
   terminal_access: none
   allowed_commands: []
@@ -106,3 +127,86 @@ def test_build_registry_snapshot_is_deterministic(tmp_path: Path) -> None:
     registry_a = load_agent_registry_from_paths([first, second])
     registry_b = load_agent_registry_from_paths([second, first])
     assert build_registry_snapshot(registry_a) == build_registry_snapshot(registry_b)
+
+
+def test_arxiv_research_agentspec_validates_under_registry() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    agent_yaml = repo_root / "agents" / "arxiv_research" / "agent.yaml"
+
+    registry = load_agent_registry_from_paths([agent_yaml])
+    spec = registry.get("arxiv.research")
+
+    assert spec is not None
+    assert spec.version == "1.0.0"
+    assert spec.runtime.type is not None
+    assert spec.runtime.type.value == "python_subprocess"
+    assert spec.runtime.entrypoint == "agents.arxiv_research.entrypoint:run"
+    assert spec.runtime.max_concurrency == 2
+    assert [operation.name for operation in spec.capabilities.operations] == [
+        "fetch_and_snapshot",
+        "synthesize_digest",
+        "score_papers",
+        "render_report",
+    ]
+    assert spec.operations_policy.network_allowlist == ["export.arxiv.org"]
+
+
+def test_load_agent_registry_rejects_missing_operations_metadata(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.missingops",
+        intents=["research"],
+        tags=["digest"],
+        operations=[],
+    )
+
+    with pytest.raises(ValueError, match="capabilities.operations must declare at least one operation"):
+        load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_duplicate_operation_names(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.dupops",
+        intents=["research"],
+        tags=["digest"],
+        operations=["fetch", "fetch"],
+    )
+
+    with pytest.raises(ValueError, match="duplicate name"):
+        load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_empty_operation_name(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.emptyop",
+        intents=["research"],
+        tags=["digest"],
+    )
+    payload = agent_yaml.read_text(encoding="utf-8").replace("- name: pipeline", "- name: '   '")
+    agent_yaml.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid AgentSpec"):
+        load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_runtime_type_mismatch(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.runtime_mismatch",
+        intents=["research"],
+        tags=["digest"],
+    )
+    payload = agent_yaml.read_text(encoding="utf-8").replace(
+        "type: python_subprocess",
+        "type: container",
+    )
+    agent_yaml.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="runtime.type must match runtime adapter kind"):
+        load_agent_registry_from_paths([agent_yaml])

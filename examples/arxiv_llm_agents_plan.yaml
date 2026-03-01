@@ -1,0 +1,66 @@
+plan_id: arxiv-llm-agents-v1
+max_parallel: 2
+policy_snapshot: {}
+trigger:
+  kind: manual
+  source: cli
+nodes:
+  - node_id: fetch_and_snapshot
+    agent_id: arxiv.research
+    operation: fetch_and_snapshot
+    outputs: [raw_feed_xml, papers_raw]
+    metadata:
+      config:
+        mode: live
+        query: >
+          ("llm agent" OR "language agent" OR "tool use" OR workflow OR orchestration OR "multi-agent")
+          AND (architecture OR framework OR best-practice OR microsoft OR cybersecurity OR security)
+        categories: [cs.AI, cs.CL, cs.SE, cs.CR]
+        max_results: 40
+        sort_by: relevance
+        ranking:
+          factors: [topic_alignment, citations, credibility, practical_impact, engagement, recency]
+          weights:
+            topic_alignment: 0.3
+            practical_impact: 0.2
+            citations: 0.2
+            credibility: 0.15
+            engagement: 0.05
+            recency: 0.1
+
+  - node_id: score_papers
+    agent_id: arxiv.research
+    operation: score_papers
+    inputs: [papers_raw]
+    outputs: [papers_scored, papers_selected, scoring_diagnostics]
+    depends_on: [fetch_and_snapshot]
+    metadata:
+      config:
+        scoring:
+          enabled: true
+
+  - node_id: synthesize_digest
+    agent_id: arxiv.research
+    operation: synthesize_digest
+    inputs: [papers_selected]
+    outputs: [digest_json]
+    depends_on: [score_papers]
+    metadata:
+      config:
+        mode: replay
+
+  - node_id: render_report
+    agent_id: arxiv.research
+    operation: render_report
+    inputs: [digest_json]
+    outputs: [report_md, sources_json]
+    depends_on: [synthesize_digest]
+
+  - node_id: local_write_delivery
+    agent_id: arxiv.research
+    operation: local_write_delivery
+    inputs: [report_md]
+    outputs: [delivery_path]
+    depends_on: [render_report]
+    metadata:
+      optional: true

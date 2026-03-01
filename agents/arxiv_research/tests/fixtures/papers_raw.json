@@ -1,0 +1,26 @@
+[
+  {
+    "paper_id": "2401.00001v1",
+    "title": "Paper One",
+    "authors": [
+      "Alice"
+    ],
+    "abstract": "First summary.",
+    "categories": [
+      "cs.AI"
+    ],
+    "published": "2026-01-01T00:00:00Z"
+  },
+  {
+    "paper_id": "2401.00002v1",
+    "title": "Paper Two",
+    "authors": [
+      "Bob"
+    ],
+    "abstract": "Second summary.",
+    "categories": [
+      "cs.LG"
+    ],
+    "published": "2026-01-02T00:00:00Z"
+  }
+]

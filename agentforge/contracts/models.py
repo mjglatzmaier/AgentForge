@@ -146,6 +146,21 @@ class AgentRuntimeKind(str, Enum):
     CONTAINER = "container"
 
 
+class AgentRuntimeType(str, Enum):
+    """Plugin runtime transport metadata."""
+
+    PYTHON_SUBPROCESS = "python_subprocess"
+    COMMAND_SUBPROCESS = "command_subprocess"
+    CONTAINER = "container"
+
+
+class ContainerIOContract(str, Enum):
+    """Container I/O contract surface for runtime adapters."""
+
+    JSON_STDIO = "json-stdio"
+    JSON_FILES = "json-files"
+
+
 class TerminalAccess(str, Enum):
     """Terminal access level for agent execution policy."""
 
@@ -164,8 +179,10 @@ class AgentRuntimeSpec(BaseModel):
     """Runtime metadata for one agent spec."""
 
     runtime: AgentRuntimeKind
+    type: AgentRuntimeType | None = None
     entrypoint: str
     cwd: str | None = None
+    container: "ContainerRuntimeContract | None" = None
     timeout_s: float
     max_concurrency: int
 
@@ -192,6 +209,101 @@ class AgentRuntimeSpec(BaseModel):
         if value < 1:
             raise ValueError("max_concurrency must be >= 1.")
         return value
+
+    @model_validator(mode="after")
+    def validate_runtime_metadata(self) -> "AgentRuntimeSpec":
+        if self.type is None:
+            self.type = _default_runtime_type(self.runtime)
+        expected_type = _default_runtime_type(self.runtime)
+        if self.type is not expected_type:
+            raise ValueError(
+                "runtime.type must match runtime adapter kind "
+                f"('{self.runtime.value}' -> '{expected_type.value}')."
+            )
+        if self.runtime is AgentRuntimeKind.PYTHON and self.entrypoint.count(":") != 1:
+            raise ValueError(
+                "Python runtime entrypoint must use format 'module.path:function'."
+            )
+        if self.runtime is AgentRuntimeKind.CONTAINER and self.container is None:
+            raise ValueError(
+                "Container runtime requires runtime.container (image/command/env/io_contract)."
+            )
+        if self.runtime is not AgentRuntimeKind.CONTAINER and self.container is not None:
+            raise ValueError("runtime.container is only allowed when runtime='container'.")
+        return self
+
+
+class ContainerRuntimeContract(BaseModel):
+    """Container execution contract surface."""
+
+    image: str
+    command: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    io_contract: ContainerIOContract = ContainerIOContract.JSON_STDIO
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Container image must be non-empty.")
+        return normalized
+
+    @field_validator("command")
+    @classmethod
+    def validate_command(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("Container command entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, env_value in value.items():
+            normalized_key = key.strip()
+            normalized_value = env_value.strip()
+            if not normalized_key or not normalized_value:
+                raise ValueError("Container env keys/values must be non-empty strings.")
+            normalized[normalized_key] = normalized_value
+        return normalized
+
+
+class AgentOperationCapability(BaseModel):
+    """Declared plugin operation metadata."""
+
+    name: str
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Agent operation name must be non-empty.")
+        return normalized
+
+    @field_validator("inputs", "outputs")
+    @classmethod
+    def validate_io_lists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("Operation input/output entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+
+class AgentCapabilities(BaseModel):
+    """Capability metadata for plugin routing."""
+
+    operations: list[AgentOperationCapability] = Field(default_factory=list)
 
 
 class OperationsPolicy(BaseModel):
@@ -234,6 +346,7 @@ class AgentSpec(BaseModel):
     input_contracts: list[str] = Field(default_factory=list)
     output_contracts: list[str] = Field(default_factory=list)
     runtime: AgentRuntimeSpec
+    capabilities: AgentCapabilities = Field(default_factory=AgentCapabilities)
     operations_policy: OperationsPolicy
 
     @field_validator("agent_id", "version", "description")
@@ -254,6 +367,15 @@ class AgentSpec(BaseModel):
                 raise ValueError("AgentSpec list entries must be non-empty.")
             normalized.append(normalized_item)
         return normalized
+
+
+def _default_runtime_type(runtime: AgentRuntimeKind) -> AgentRuntimeType:
+    mapping = {
+        AgentRuntimeKind.PYTHON: AgentRuntimeType.PYTHON_SUBPROCESS,
+        AgentRuntimeKind.COMMAND: AgentRuntimeType.COMMAND_SUBPROCESS,
+        AgentRuntimeKind.CONTAINER: AgentRuntimeType.CONTAINER,
+    }
+    return mapping[runtime]
 
 
 class ExecutionStatus(str, Enum):
@@ -332,6 +454,34 @@ class ExecutionResult(BaseModel):
             return None
         if value < 0:
             raise ValueError("ExecutionResult latency_ms must be >= 0.")
+        return value
+
+
+class RuntimeInteropRequest(BaseModel):
+    """Normalized JSON contract for non-Python runtime requests."""
+
+    schema_version: int = 1
+    request: ExecutionRequest
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Unsupported RuntimeInteropRequest schema_version.")
+        return value
+
+
+class RuntimeInteropResponse(BaseModel):
+    """Normalized JSON contract for non-Python runtime responses."""
+
+    schema_version: int = 1
+    result: ExecutionResult
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Unsupported RuntimeInteropResponse schema_version.")
         return value
 
 
