@@ -573,7 +573,7 @@ Enable true production use of `agentforge dispatch/status/resume` and execute th
   - register node outputs in `manifest.json` as `ArtifactRef`
   - enforce unique artifact names and path validation via existing manifest utilities
   - ensure downstream nodes read inputs strictly from manifest refs
-- [ ] 7.3 Node lifecycle events:
+- [X] 7.3 Node lifecycle events:
   - append `NODE_READY`, `NODE_STARTED`, `NODE_SUCCEEDED`, `NODE_FAILED`
   - include retry attempt metadata when retrying transient failures
   - persist final `control/snapshot.json` at terminal state

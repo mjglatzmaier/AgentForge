@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from agentforge.control.events import load_control_events
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot
 from agentforge.control.runtime import execute_control_run
 from agentforge.control.state import persist_control_artifacts
@@ -13,6 +14,7 @@ from agentforge.storage.manifest import load_manifest
 from agentforge.contracts.models import (
     ArtifactRef,
     AgentSpec,
+    ControlEventType,
     ControlNode,
     ControlNodeState,
     ControlPlan,
@@ -50,6 +52,18 @@ def _entrypoint_emits_artifact(request: ExecutionRequest) -> dict[str, object]:
         producer_step_id="ignored",
     )
     return {"status": "success", "produced_artifacts": [artifact]}
+
+
+def _entrypoint_fail_once_then_success(request: ExecutionRequest) -> dict[str, object]:
+    step_dir = Path(request.metadata["step_dir"])
+    attempts_file = step_dir / "attempts.txt"
+    attempt_count = 0
+    if attempts_file.exists():
+        attempt_count = int(attempts_file.read_text(encoding="utf-8"))
+    attempts_file.write_text(str(attempt_count + 1), encoding="utf-8")
+    if attempt_count == 0:
+        return {"status": "failed", "error": "transient"}
+    return _entrypoint_emits_artifact(request)
 
 
 def _agent_spec(*, agent_id: str, entrypoint: str) -> AgentSpec:
@@ -147,6 +161,18 @@ def test_execute_control_run_executes_ready_nodes_and_persists_transitions(tmp_p
     assert manifest.artifacts[0].producer_step_id == "fetch"
     assert manifest.artifacts[1].path == "steps/01_synthesize/outputs/synthesize_digest.txt"
     assert manifest.artifacts[1].producer_step_id == "synthesize"
+    events = load_control_events(run_dir)
+    assert [event.event_type for event in events] == [
+        ControlEventType.NODE_READY,
+        ControlEventType.NODE_STARTED,
+        ControlEventType.NODE_SUCCEEDED,
+        ControlEventType.NODE_READY,
+        ControlEventType.NODE_STARTED,
+        ControlEventType.NODE_SUCCEEDED,
+    ]
+    snapshot = json.loads((run_dir / "control" / "snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot["node_states"] == {"fetch": "succeeded", "synthesize": "succeeded"}
+    assert snapshot["last_event_id"] == events[-1].event_id
 
 
 def test_execute_control_run_marks_failed_result_state(tmp_path: Path) -> None:
@@ -173,6 +199,15 @@ def test_execute_control_run_marks_failed_result_state(tmp_path: Path) -> None:
     assert result.node_results["fetch"].status is ExecutionStatus.FAILED
     runtime_state = json.loads((run_dir / "control" / "runtime_state.json").read_text(encoding="utf-8"))
     assert runtime_state["node_states"] == {"fetch": "failed"}
+    events = load_control_events(run_dir)
+    assert [event.event_type for event in events] == [
+        ControlEventType.NODE_READY,
+        ControlEventType.NODE_STARTED,
+        ControlEventType.NODE_FAILED,
+    ]
+    snapshot = json.loads((run_dir / "control" / "snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot["node_states"] == {"fetch": "failed"}
+    assert snapshot["last_event_id"] == events[-1].event_id
 
 
 def test_execute_control_run_fails_when_agent_missing_from_registry(tmp_path: Path) -> None:
@@ -255,3 +290,41 @@ def test_execute_control_run_requires_manifest_input_artifacts(tmp_path: Path) -
 
     with pytest.raises(KeyError, match="requires missing manifest artifact"):
         execute_control_run(run_dir)
+
+
+def test_execute_control_run_emits_retry_attempt_metadata_on_retry(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-006"
+    plan = ControlPlan(
+        plan_id="plan-6",
+        trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
+        nodes=[
+            ControlNode(
+                node_id="fetch",
+                agent_id="agent.test",
+                operation="fetch_and_snapshot",
+                retry_policy={"transient_max_retries": 2},
+                metadata={"output_name": "papers_raw"},
+            )
+        ],
+    )
+    registry = AgentRegistry(
+        agents_by_id={
+            "agent.test": _agent_spec(
+                agent_id="agent.test",
+                entrypoint="agentforge.tests.control.test_runtime:_entrypoint_fail_once_then_success",
+            )
+        },
+        capability_index={},
+    )
+    _persist_run_artifacts(run_dir=run_dir, plan=plan, registry=registry)
+
+    result = execute_control_run(run_dir)
+
+    assert result.node_states == {"fetch": ControlNodeState.SUCCEEDED}
+    events = load_control_events(run_dir)
+    ready_retry_events = [
+        event
+        for event in events
+        if event.event_type is ControlEventType.NODE_READY and event.payload.get("retry_attempt") == 1
+    ]
+    assert ready_retry_events

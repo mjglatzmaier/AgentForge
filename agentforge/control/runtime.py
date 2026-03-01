@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
+from uuid import uuid4
 
 from agentforge.control.adapters import (
     CommandRuntimeAdapter,
@@ -13,9 +15,11 @@ from agentforge.control.adapters import (
     PythonRuntimeAdapter,
     RuntimeAdapter,
 )
+from agentforge.control.events import append_node_transition_event
 from agentforge.control.handoff import resolve_node_inputs_from_manifest
 from agentforge.control.registry import AgentRegistry
 from agentforge.control.scheduler import plan_scheduler_tick
+from agentforge.control.state import persist_final_control_snapshot
 from agentforge.contracts.models import (
     AgentRuntimeKind,
     AgentSpec,
@@ -58,6 +62,8 @@ def execute_control_run(
 
     node_states = {node.node_id: node.state for node in plan.nodes}
     node_results: dict[str, ExecutionResult] = {}
+    mutable_retry_counts = dict(retry_counts or {})
+    last_event_id: str | None = None
     _persist_runtime_state(run_path, plan=plan, node_states=node_states)
 
     while True:
@@ -65,10 +71,24 @@ def execute_control_run(
         tick = plan_scheduler_tick(
             plan,
             node_states=node_states,
-            retry_counts=retry_counts,
+            retry_counts=mutable_retry_counts,
         )
         node_states = dict(tick.node_states)
         if node_states != before_tick:
+            for node_id in sorted(node_states):
+                if before_tick[node_id] is node_states[node_id]:
+                    continue
+                if node_states[node_id] is not ControlNodeState.READY:
+                    continue
+                payload: dict[str, object] = {}
+                if before_tick[node_id] is ControlNodeState.FAILED:
+                    payload["retry_attempt"] = mutable_retry_counts.get(node_id, 0)
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.READY,
+                    payload=payload,
+                )
             _persist_runtime_state(run_path, plan=plan, node_states=node_states)
 
         if not tick.dispatch_node_ids:
@@ -88,6 +108,15 @@ def execute_control_run(
                 )
 
             node_states[node_id] = ControlNodeState.RUNNING
+            start_payload: dict[str, object] = {}
+            if mutable_retry_counts.get(node_id, 0) > 0:
+                start_payload["retry_attempt"] = mutable_retry_counts[node_id]
+            last_event_id = _append_transition(
+                run_path=run_path,
+                node_id=node_id,
+                to_state=ControlNodeState.RUNNING,
+                payload=start_payload,
+            )
             _persist_runtime_state(run_path, plan=plan, node_states=node_states)
 
             request = _build_execution_request(
@@ -110,13 +139,34 @@ def execute_control_run(
                 result = result.model_copy(update={"produced_artifacts": bridged_artifacts})
             node_results[node_id] = result
 
-            node_states[node_id] = (
-                ControlNodeState.SUCCEEDED
-                if result.status is ExecutionStatus.SUCCESS
-                else ControlNodeState.FAILED
-            )
+            if result.status is ExecutionStatus.SUCCESS:
+                node_states[node_id] = ControlNodeState.SUCCEEDED
+                complete_payload: dict[str, object] = {}
+                if mutable_retry_counts.get(node_id, 0) > 0:
+                    complete_payload["retry_attempt"] = mutable_retry_counts[node_id]
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.SUCCEEDED,
+                    payload=complete_payload,
+                )
+            else:
+                node_states[node_id] = ControlNodeState.FAILED
+                mutable_retry_counts[node_id] = mutable_retry_counts.get(node_id, 0) + 1
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.FAILED,
+                    payload={"retry_attempt": mutable_retry_counts[node_id]},
+                )
             _persist_runtime_state(run_path, plan=plan, node_states=node_states)
 
+    persist_final_control_snapshot(
+        run_path,
+        plan=plan,
+        node_states=node_states,
+        last_event_id=last_event_id,
+    )
     return ControlRunExecution(
         plan_id=plan.plan_id,
         node_states=node_states,
@@ -265,3 +315,22 @@ def _write_json_atomic(path: Path, payload: object) -> None:
     temp_path = path.with_suffix(f"{path.suffix}.tmp")
     temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     temp_path.replace(path)
+
+
+def _append_transition(
+    *,
+    run_path: Path,
+    node_id: str,
+    to_state: ControlNodeState,
+    payload: Mapping[str, object] | None = None,
+) -> str:
+    event_id = f"evt-{uuid4().hex}"
+    append_node_transition_event(
+        run_path,
+        event_id=event_id,
+        timestamp_utc=datetime.now(timezone.utc),
+        node_id=node_id,
+        to_state=to_state,
+        payload=dict(payload or {}),
+    )
+    return event_id
