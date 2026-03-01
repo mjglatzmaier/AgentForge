@@ -164,10 +164,10 @@ Acceptance:
 ---
 
 ### Phase S2 — Deterministic Feature Engine
-- [ ] S2.1 Implement topic alignment feature
-- [ ] S2.2 Implement recency feature
-- [ ] S2.3 Implement credibility + rigor + engagement proxy features
-- [ ] S2.4 Ensure normalized feature outputs and capped ranges
+- [X] S2.1 Implement topic alignment feature
+- [X] S2.2 Implement recency feature
+- [X] S2.3 Implement credibility + rigor + engagement proxy features
+- [X] S2.4 Ensure normalized feature outputs and capped ranges
 
 Acceptance:
 - feature outputs deterministic and bounded
