@@ -600,7 +600,7 @@ Acceptance criteria:
   - validate declared operation names are unique and non-empty
   - fail fast with explicit schema/contract errors
 
-- [ ] 8b.1 Implement ArXiv as a plugin at `agents/arxiv_research/entrypoint.py`:
+- [X] 8b.1 Implement ArXiv as a plugin at `agents/arxiv_research/entrypoint.py`:
   - expose canonical `run(request)` entrypoint
   - route operations:
     - `fetch_and_snapshot`
