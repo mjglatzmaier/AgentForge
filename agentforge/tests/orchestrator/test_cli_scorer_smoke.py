@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +12,11 @@ from agentforge.providers import LlmResult
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import load_manifest, register_artifact, save_manifest
 from agents.arxiv_research import synthesis
-from agents.arxiv_research.models import DigestBullet, ResearchDigest, ResearchPaper
+from agents.arxiv_research.models import DigestBullet, ResearchPaper, SynthesisHighlights
 
 
 class _ProviderFromPrompt:
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         prompt = str(kwargs.get("prompt", ""))
         marker = "Input papers JSON:\n"
         papers_payload: list[dict[str, Any]] = []
@@ -32,15 +31,13 @@ class _ProviderFromPrompt:
                     cited_paper_ids=[papers[0].paper_id],
                 )
             ]
-        digest = ResearchDigest(
+        payload = SynthesisHighlights(
             query="scorer-smoke",
-            generated_at_utc=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            papers=papers,
             highlights=highlights,
         )
         return LlmResult(
-            parsed=digest,
-            raw_text=digest.model_dump_json(),
+            parsed=payload,
+            raw_text=payload.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )

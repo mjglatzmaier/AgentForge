@@ -116,10 +116,10 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 - [X] O0.3 Add tests asserting diagnostics artifact presence on success/failure paths.
 
 ### Phase O1 — Compact Output Contract
-- [ ] O1.1 Add `SynthesisHighlights` model (agent-local).
-- [ ] O1.2 Change provider response model from `ResearchDigest` to `SynthesisHighlights`.
-- [ ] O1.3 Build `ResearchDigest` in Python using selected/raw input papers.
-- [ ] O1.4 Keep citation validation strict against input paper IDs.
+- [X] O1.1 Add `SynthesisHighlights` model (agent-local).
+- [X] O1.2 Change provider response model from `ResearchDigest` to `SynthesisHighlights`.
+- [X] O1.3 Build `ResearchDigest` in Python using selected/raw input papers.
+- [X] O1.4 Keep citation validation strict against input paper IDs.
 
 ### Phase O2 — Input Compression
 - [ ] O2.1 Add deterministic compression helper in `synthesis.py` (or `synthesis_utils.py`).

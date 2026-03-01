@@ -93,6 +93,21 @@ class DigestBullet(BaseModel):
         return normalized
 
 
+class SynthesisHighlights(BaseModel):
+    query: str | None = None
+    highlights: list[DigestBullet] = Field(default_factory=list)
+
+    @field_validator("query")
+    @classmethod
+    def validate_optional_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("query must be non-empty when provided.")
+        return normalized
+
+
 class ResearchDigest(BaseModel):
     query: str
     generated_at_utc: AwareDatetime

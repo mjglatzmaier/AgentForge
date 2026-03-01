@@ -8,17 +8,17 @@ import pytest
 
 from agentforge.providers import LlmResult
 from agents.arxiv_research import ingest, synthesis
-from agents.arxiv_research.models import ResearchDigest
+from agents.arxiv_research.models import ResearchDigest, SynthesisHighlights
 
 
 class _ProviderStub:
-    def __init__(self, digest: ResearchDigest) -> None:
-        self._digest = digest
+    def __init__(self, highlights: SynthesisHighlights) -> None:
+        self._highlights = highlights
 
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         return LlmResult(
-            parsed=self._digest,
-            raw_text=self._digest.model_dump_json(),
+            parsed=self._highlights,
+            raw_text=self._highlights.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )
@@ -52,7 +52,13 @@ def test_replay_integration_matches_expected_digest_fixture(
 
     expected_digest_payload = json.loads(expected_digest_fixture.read_text(encoding="utf-8"))
     expected_digest = ResearchDigest.model_validate(expected_digest_payload)
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(expected_digest))
+    monkeypatch.setattr(
+        synthesis,
+        "_resolve_provider",
+        lambda _ctx: _ProviderStub(
+            SynthesisHighlights(query=expected_digest.query, highlights=expected_digest.highlights)
+        ),
+    )
 
     synth_step = tmp_path / "synthesis"
     synthesis.synthesize_digest(

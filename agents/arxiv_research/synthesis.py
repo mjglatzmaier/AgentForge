@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from agentforge.providers import (
     OpenAIProvider,
     ProviderValidationError,
 )
-from agents.arxiv_research.models import ResearchDigest, ResearchPaper
+from agents.arxiv_research.models import ResearchDigest, ResearchPaper, SynthesisHighlights
 
 _SYSTEM_PROMPT = (
     "You are a research synthesis assistant. "
@@ -40,9 +41,9 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        result: LlmResult[ResearchDigest] = provider.generate_json(
+        result: LlmResult[SynthesisHighlights] = provider.generate_json(
             prompt=prompt,
-            response_model=ResearchDigest,
+            response_model=SynthesisHighlights,
             system_prompt=_SYSTEM_PROMPT,
             model=settings["model"],
             temperature=settings["temperature"],
@@ -56,7 +57,12 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
-        digest = result.parsed
+        digest = _build_research_digest(
+            highlights_payload=result.parsed,
+            papers=papers,
+            ctx=ctx,
+            mode=str(settings["mode"]),
+        )
         _validate_citations(digest=digest, papers=papers)
     except ProviderValidationError as exc:
         _record_failure_diagnostics(diagnostics=diagnostics, error_text=str(exc))
@@ -193,6 +199,70 @@ def _validate_citations(*, digest: ResearchDigest, papers: list[ResearchPaper]) 
 
     if invalid_entries:
         raise ProviderValidationError("Invalid highlight citations: " + "; ".join(invalid_entries))
+
+
+def _build_research_digest(
+    *,
+    highlights_payload: SynthesisHighlights,
+    papers: list[ResearchPaper],
+    ctx: dict[str, Any],
+    mode: str,
+) -> ResearchDigest:
+    return ResearchDigest(
+        query=_resolve_digest_query(highlights_payload=highlights_payload, ctx=ctx),
+        generated_at_utc=_resolve_generated_at_utc(ctx=ctx, papers=papers, mode=mode),
+        papers=[paper.model_copy(deep=True) for paper in papers],
+        highlights=[highlight.model_copy(deep=True) for highlight in highlights_payload.highlights],
+    )
+
+
+def _resolve_digest_query(*, highlights_payload: SynthesisHighlights, ctx: dict[str, Any]) -> str:
+    if highlights_payload.query is not None:
+        return highlights_payload.query
+    config = ctx.get("config", {})
+    if isinstance(config, dict):
+        raw_query = config.get("query")
+        if isinstance(raw_query, str) and raw_query.strip():
+            return raw_query.strip()
+    return "research digest"
+
+
+def _resolve_generated_at_utc(
+    *,
+    ctx: dict[str, Any],
+    papers: list[ResearchPaper],
+    mode: str,
+) -> datetime:
+    config = ctx.get("config", {})
+    if isinstance(config, dict):
+        raw_generated_at = config.get("generated_at_utc")
+        if isinstance(raw_generated_at, str) and raw_generated_at.strip():
+            try:
+                return _parse_aware_datetime(raw_generated_at)
+            except ValueError as exc:
+                raise ValueError("config.generated_at_utc must be ISO-8601 when provided.") from exc
+    if mode == "replay":
+        return _deterministic_replay_timestamp(papers)
+    return datetime.now(timezone.utc)
+
+
+def _deterministic_replay_timestamp(papers: list[ResearchPaper]) -> datetime:
+    timestamps: list[datetime] = []
+    for paper in papers:
+        try:
+            timestamps.append(_parse_aware_datetime(paper.published))
+        except ValueError:
+            continue
+    if timestamps:
+        return max(timestamps) + timedelta(days=1)
+    return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse_aware_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _base_synthesis_diagnostics(

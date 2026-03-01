@@ -13,17 +13,17 @@ from agentforge.providers import LlmResult
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import load_manifest, register_artifact, save_manifest
 from agents.arxiv_research import ingest, synthesis
-from agents.arxiv_research.models import ResearchDigest
+from agents.arxiv_research.models import ResearchDigest, SynthesisHighlights
 
 
 class _ProviderStub:
     def __init__(self, digest: ResearchDigest) -> None:
-        self._digest = digest
+        self._highlights = SynthesisHighlights(query=digest.query, highlights=digest.highlights)
 
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         return LlmResult(
-            parsed=self._digest,
-            raw_text=self._digest.model_dump_json(),
+            parsed=self._highlights,
+            raw_text=self._highlights.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )

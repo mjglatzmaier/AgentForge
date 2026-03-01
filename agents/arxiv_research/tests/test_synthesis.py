@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +8,7 @@ import pytest
 
 from agentforge.providers import LlmResult, ProviderValidationError
 from agents.arxiv_research import synthesis
-from agents.arxiv_research.models import DigestBullet, ResearchDigest, ResearchPaper
+from agents.arxiv_research.models import DigestBullet, SynthesisHighlights
 
 
 def _papers_payload() -> list[dict[str, Any]]:
@@ -34,15 +33,15 @@ def _papers_payload() -> list[dict[str, Any]]:
 
 
 class _ProviderStub:
-    def __init__(self, digest: ResearchDigest) -> None:
-        self.digest = digest
+    def __init__(self, highlights: SynthesisHighlights) -> None:
+        self.highlights = highlights
         self.calls: list[dict[str, Any]] = []
 
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         self.calls.append(dict(kwargs))
         return LlmResult(
-            parsed=self.digest,
-            raw_text=self.digest.model_dump_json(),
+            parsed=self.highlights,
+            raw_text=self.highlights.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )
@@ -52,7 +51,7 @@ class _FailingProviderStub:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         raise self.error
 
 
@@ -84,13 +83,11 @@ def test_synthesize_digest_prefers_selected_input_when_available(
     selected_path.write_text(json.dumps(selected_payload), encoding="utf-8")
     raw_path.write_text(json.dumps(raw_payload), encoding="utf-8")
 
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(selected_payload[0])],
         highlights=[DigestBullet(text="Selected-only citation", cited_paper_ids=["selected-1"])],
     )
-    provider = _ProviderStub(digest)
+    provider = _ProviderStub(highlights)
     monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     result = synthesis.synthesize_digest(
@@ -112,13 +109,11 @@ def test_synthesize_digest_falls_back_to_raw_input(
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Raw fallback citation", cited_paper_ids=["2401.00001v1"])],
     )
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(digest))
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(highlights))
 
     result = synthesis.synthesize_digest(
         {
@@ -136,13 +131,11 @@ def test_synthesize_digest_uses_provider_and_writes_output(
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Key contribution", cited_paper_ids=["2401.00001v1"])],
     )
-    provider = _ProviderStub(digest)
+    provider = _ProviderStub(highlights)
     monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     result = synthesis.synthesize_digest(
@@ -157,6 +150,7 @@ def test_synthesize_digest_uses_provider_and_writes_output(
 
     assert [item["name"] for item in result["outputs"]] == ["digest_json", "synthesis_diagnostics"]
     output_payload = json.loads((tmp_path / "outputs" / "digest.json").read_text(encoding="utf-8"))
+    assert output_payload["papers"][0]["paper_id"] == "2401.00001v1"
     assert output_payload["highlights"][0]["cited_paper_ids"] == ["2401.00001v1"]
     diagnostics_payload = json.loads(
         (tmp_path / "outputs" / "synthesis_diagnostics.json").read_text(encoding="utf-8")
@@ -169,7 +163,7 @@ def test_synthesize_digest_uses_provider_and_writes_output(
     assert diagnostics_payload["est_prompt_tokens"] > 0
     assert provider.calls
     call = provider.calls[0]
-    assert call["response_model"] is ResearchDigest
+    assert call["response_model"] is SynthesisHighlights
     assert "Summarize key contributions" in call["prompt"]
     assert "cited_paper_ids" in call["prompt"]
 
@@ -179,13 +173,11 @@ def test_synthesize_digest_rejects_uncited_highlights(
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Missing citation", cited_paper_ids=[])],
     )
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(digest))
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(highlights))
 
     with pytest.raises(ProviderValidationError, match="no cited_paper_ids"):
         synthesis.synthesize_digest(
@@ -202,13 +194,11 @@ def test_synthesize_digest_rejects_unknown_cited_paper_ids(
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Bad citation", cited_paper_ids=["unknown-id"])],
     )
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(digest))
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(highlights))
 
     with pytest.raises(ProviderValidationError, match="unknown cited_paper_ids"):
         synthesis.synthesize_digest(
@@ -225,13 +215,11 @@ def test_synthesize_digest_replay_mode_uses_deterministic_settings(
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Replay citation", cited_paper_ids=["2401.00001v1"])],
     )
-    provider = _ProviderStub(digest)
+    provider = _ProviderStub(highlights)
     monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     synthesis.synthesize_digest(
@@ -278,18 +266,39 @@ def test_synthesize_digest_writes_failure_diagnostics_on_provider_validation_err
     assert "finish_reason=length" in diagnostics_payload["error"]
 
 
+def test_synthesize_digest_uses_config_query_when_llm_query_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    highlights = SynthesisHighlights(
+        query=None,
+        highlights=[DigestBullet(text="Config fallback citation", cited_paper_ids=["2401.00001v1"])],
+    )
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(highlights))
+
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay", "query": "fallback query"},
+        }
+    )
+
+    output_payload = json.loads((tmp_path / "outputs" / "digest.json").read_text(encoding="utf-8"))
+    assert output_payload["query"] == "fallback query"
+
+
 def test_replay_mode_produces_identical_digest_for_same_snapshot_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     papers_path = tmp_path / "papers_raw.json"
     papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
-    digest = ResearchDigest(
+    highlights = SynthesisHighlights(
         query="agent systems",
-        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
-        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
         highlights=[DigestBullet(text="Replay citation", cited_paper_ids=["2401.00001v1"])],
     )
-    provider = _ProviderStub(digest)
+    provider = _ProviderStub(highlights)
     monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     run_a = tmp_path / "run_a"
