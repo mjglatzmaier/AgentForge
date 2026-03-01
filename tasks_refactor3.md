@@ -564,7 +564,7 @@ Enable true production use of `agentforge dispatch/status/resume` and execute th
 
 ### Phase 7 — Control Runtime Execution Loop
 
-- [ ] 7.1 Build control-plane run executor:
+- [X] 7.1 Build control-plane run executor:
   - load `ControlPlan` + `AgentRegistry` for a run
   - construct `ExecutionRequest` per ready node
   - execute via `RuntimeAdapter` selection from `AgentSpec.runtime`

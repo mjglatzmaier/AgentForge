@@ -23,6 +23,7 @@ from agentforge.control.registry import (
     export_registry_snapshot,
     load_agent_registry,
 )
+from agentforge.control.runtime import ControlRunExecution, execute_control_run
 from agentforge.control.scheduler import SchedulerTick, plan_scheduler_tick
 from agentforge.control.state import persist_control_artifacts, persist_final_control_snapshot
 
@@ -32,6 +33,7 @@ __all__ = [
     "ContainerRuntimeAdapter",
     "PythonRuntimeAdapter",
     "RuntimeAdapter",
+    "ControlRunExecution",
     "append_control_event",
     "append_node_transition_event",
     "build_registry_snapshot",
@@ -39,6 +41,7 @@ __all__ = [
     "export_registry_snapshot",
     "load_control_events",
     "load_agent_registry",
+    "execute_control_run",
     "plan_scheduler_tick",
     "resolve_node_inputs_from_manifest",
     "replay_control_events",
