@@ -487,7 +487,7 @@ Acceptance criteria:
 
 ## 6.6 Example Multi-Node ControlPlan (Public Demo)
 
-Create example plan under `examples/arxiv_digest_plan.yaml`:
+- [X] Create example plan under `examples/arxiv_digest_plan.yaml`:
 
 Nodes:
 1) fetch_and_snapshot (arxiv.research, mode=live)
