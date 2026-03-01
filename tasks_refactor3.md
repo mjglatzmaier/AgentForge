@@ -644,7 +644,7 @@ Acceptance criteria:
   - create run directory and initialize manifest/control artifacts
   - persist request payload artifact (`request_json`) and trigger metadata
   - materialize an initial `ControlPlan` for the selected agent
-- [ ] 9.2 Plan generation modes:
+- [X] 9.2 Plan generation modes:
   - default single-agent/single-plan dispatch path
   - support loading a plan file override (e.g., `examples/arxiv_digest_plan.yaml`) when provided
   - validate agent existence in registry before run start

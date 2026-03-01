@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from agentforge.control.registry import build_registry_snapshot, load_agent_registry
+import yaml
+
+from agentforge.control.registry import AgentRegistry, build_registry_snapshot, load_agent_registry
 from agentforge.control.state import persist_control_artifacts
 from agentforge.contracts.models import (
     ArtifactRef,
@@ -58,6 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dispatch_parser.add_argument("--agent", required=True)
     dispatch_parser.add_argument("--request", required=True)
     dispatch_parser.add_argument("--base-dir", default=".")
+    dispatch_parser.add_argument("--plan")
     dispatch_parser.add_argument(
         "--trigger-kind",
         choices=[kind.value for kind in TriggerKind],
@@ -104,6 +107,7 @@ def run_cli(argv: list[str] | None = None) -> int:
                 request_path=Path(args.request),
                 base_dir=Path(args.base_dir),
                 trigger=trigger,
+                plan_path=Path(args.plan) if args.plan else None,
             )
             raise RuntimeError(f"dispatch command is not implemented yet (run_id={run_id})")
 
@@ -144,13 +148,34 @@ def _initialize_dispatch_run(
     request_path: Path,
     base_dir: Path,
     trigger: TriggerSpec,
+    plan_path: Path | None,
 ) -> str:
     if not request_path.exists():
         raise FileNotFoundError(f"Request file not found: {request_path}")
     if not request_path.is_file():
         raise ValueError(f"Request path must be a file: {request_path}")
 
+    registry = load_agent_registry(base_dir)
+
     run_id = str(uuid4())
+    trigger_metadata = dict(trigger.metadata)
+    trigger_metadata["agent_id"] = agent_id
+    trigger_snapshot = trigger.model_copy(
+        update={
+            "request_artifact": "request_json",
+            "metadata": trigger_metadata,
+        }
+    )
+    if plan_path is None:
+        plan = _materialize_initial_control_plan(
+            run_id=run_id,
+            agent_id=agent_id,
+            trigger=trigger_snapshot,
+        )
+    else:
+        plan = _load_control_plan_override(plan_path).model_copy(update={"trigger": trigger_snapshot})
+    _validate_plan_agents_exist(plan=plan, agent_id=agent_id, registry=registry)
+
     layout = create_run_layout(base_dir, run_id)
     manifest = init_manifest(layout.manifest_json, run_id=run_id)
 
@@ -168,20 +193,6 @@ def _initialize_dispatch_run(
     register_artifact(manifest, artifact)
     save_manifest(layout.manifest_json, manifest)
 
-    trigger_metadata = dict(trigger.metadata)
-    trigger_metadata["agent_id"] = agent_id
-    trigger_snapshot = trigger.model_copy(
-        update={
-            "request_artifact": "request_json",
-            "metadata": trigger_metadata,
-        }
-    )
-    plan = _materialize_initial_control_plan(
-        run_id=run_id,
-        agent_id=agent_id,
-        trigger=trigger_snapshot,
-    )
-    registry = load_agent_registry(base_dir)
     persist_control_artifacts(
         layout.run_dir,
         plan=plan,
@@ -205,3 +216,20 @@ def _materialize_initial_control_plan(*, run_id: str, agent_id: str, trigger: Tr
             )
         ],
     )
+
+
+def _load_control_plan_override(path: Path) -> ControlPlan:
+    if not path.exists():
+        raise FileNotFoundError(f"Plan file not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"Plan path must be a file: {path}")
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return ControlPlan.model_validate(loaded)
+
+
+def _validate_plan_agents_exist(*, plan: ControlPlan, agent_id: str, registry: AgentRegistry) -> None:
+    if registry.get(agent_id) is None:
+        raise ValueError(f"Unknown agent_id for dispatch: {agent_id}")
+    missing = sorted({node.agent_id for node in plan.nodes if registry.get(node.agent_id) is None})
+    if missing:
+        raise ValueError(f"ControlPlan references unknown agent_id(s): {missing}")

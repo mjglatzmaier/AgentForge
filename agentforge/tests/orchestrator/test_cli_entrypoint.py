@@ -6,6 +6,43 @@ import sys
 from pathlib import Path
 
 
+def _write_dispatch_agent(base_dir: Path, *, agent_id: str = "arxiv.research") -> None:
+    agent_yaml = base_dir / "agents" / "arxiv_research" / "agent.yaml"
+    agent_yaml.parent.mkdir(parents=True, exist_ok=True)
+    agent_yaml.write_text(
+        f"""
+agent_id: {agent_id}
+version: 1.0.0
+description: test
+intents: [research]
+tags: [digest]
+input_contracts: [Req]
+output_contracts: [Res]
+runtime:
+  runtime: python
+  type: python_subprocess
+  entrypoint: agents.arxiv_research.entrypoint:run
+  timeout_s: 30
+  max_concurrency: 1
+capabilities:
+  operations:
+    - name: pipeline
+      inputs: [request_json]
+      outputs: [pipeline_result]
+    - name: fetch_and_snapshot
+      inputs: [request_json]
+      outputs: [raw_feed_xml, papers_raw]
+operations_policy:
+  terminal_access: none
+  allowed_commands: []
+  fs_scope: [outputs/]
+  network_access: none
+  network_allowlist: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+
 def test_cli_run_invocation_creates_run_directory(tmp_path: Path) -> None:
     pipeline = tmp_path / "pipeline.yaml"
     pipeline.write_text(
@@ -102,7 +139,7 @@ def test_cli_dispatch_rejects_event_trigger_without_event_type(tmp_path: Path) -
             "agentforge",
             "dispatch",
             "--agent",
-            "agent.research",
+            "arxiv.research",
             "--request",
             str(request_file),
             "--trigger-kind",
@@ -142,6 +179,7 @@ def test_cli_runtime_error_uses_exit_code_two(tmp_path: Path) -> None:
 
 
 def test_cli_dispatch_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
+    _write_dispatch_agent(tmp_path)
     request_file = tmp_path / "request.json"
     request_file.write_text("{}", encoding="utf-8")
     completed = subprocess.run(
@@ -151,7 +189,7 @@ def test_cli_dispatch_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
             "agentforge",
             "dispatch",
             "--agent",
-            "agent.research",
+            "arxiv.research",
             "--request",
             str(request_file),
             "--base-dir",
@@ -180,16 +218,17 @@ def test_cli_dispatch_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
     registry_payload = json.loads((run_dir / "control" / "registry.json").read_text(encoding="utf-8"))
     assert plan_payload["plan_id"] == f"dispatch-{run_dir.name}"
     assert len(plan_payload["nodes"]) == 1
-    assert plan_payload["nodes"][0]["agent_id"] == "agent.research"
+    assert plan_payload["nodes"][0]["agent_id"] == "arxiv.research"
     assert plan_payload["nodes"][0]["operation"] == "pipeline"
     assert plan_payload["nodes"][0]["inputs"] == ["request_json"]
     assert trigger_payload["request_artifact"] == "request_json"
-    assert trigger_payload["metadata"]["agent_id"] == "agent.research"
+    assert trigger_payload["metadata"]["agent_id"] == "arxiv.research"
     assert registry_payload["schema_version"] == 1
     assert "agents" in registry_payload
 
 
 def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
+    _write_dispatch_agent(tmp_path)
     request_file = tmp_path / "request.json"
     request_file.write_text("{}", encoding="utf-8")
     completed = subprocess.run(
@@ -199,7 +238,7 @@ def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
             "agentforge",
             "dispatch",
             "--agent",
-            "agent.research",
+            "arxiv.research",
             "--request",
             str(request_file),
             "--trigger-kind",
@@ -220,6 +259,84 @@ def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
     trigger_payload = json.loads((run_dirs[0] / "control" / "trigger.json").read_text(encoding="utf-8"))
     assert trigger_payload["kind"] == "event"
     assert trigger_payload["event_type"] == "webhook.github"
+
+
+def test_cli_dispatch_supports_plan_override_file(tmp_path: Path) -> None:
+    _write_dispatch_agent(tmp_path)
+    request_file = tmp_path / "request.json"
+    request_file.write_text("{}", encoding="utf-8")
+    plan_file = tmp_path / "plan_override.yaml"
+    plan_file.write_text(
+        """
+plan_id: override-plan
+max_parallel: 1
+trigger:
+  kind: manual
+  source: tests
+nodes:
+  - node_id: fetch
+    agent_id: arxiv.research
+    operation: fetch_and_snapshot
+    inputs: [request_json]
+    outputs: [raw_feed_xml, papers_raw]
+""".strip(),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "dispatch",
+            "--agent",
+            "arxiv.research",
+            "--request",
+            str(request_file),
+            "--plan",
+            str(plan_file),
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    run_dirs = [path for path in (tmp_path / "runs").iterdir() if path.name != ".cache"]
+    assert len(run_dirs) == 1
+    plan_payload = json.loads((run_dirs[0] / "control" / "plan.json").read_text(encoding="utf-8"))
+    assert plan_payload["plan_id"] == "override-plan"
+    assert [node["node_id"] for node in plan_payload["nodes"]] == ["fetch"]
+    assert plan_payload["nodes"][0]["agent_id"] == "arxiv.research"
+    assert plan_payload["nodes"][0]["operation"] == "fetch_and_snapshot"
+    assert plan_payload["trigger"]["request_artifact"] == "request_json"
+
+
+def test_cli_dispatch_rejects_unknown_agent_before_run_start(tmp_path: Path) -> None:
+    request_file = tmp_path / "request.json"
+    request_file.write_text("{}", encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "dispatch",
+            "--agent",
+            "agent.missing",
+            "--request",
+            str(request_file),
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "Unknown agent_id for dispatch" in completed.stderr
+    assert not (tmp_path / "runs").exists()
 
 
 def test_cli_resume_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
