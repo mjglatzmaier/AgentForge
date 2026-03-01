@@ -154,6 +154,13 @@ class AgentRuntimeType(str, Enum):
     CONTAINER = "container"
 
 
+class ContainerIOContract(str, Enum):
+    """Container I/O contract surface for runtime adapters."""
+
+    JSON_STDIO = "json-stdio"
+    JSON_FILES = "json-files"
+
+
 class TerminalAccess(str, Enum):
     """Terminal access level for agent execution policy."""
 
@@ -175,6 +182,7 @@ class AgentRuntimeSpec(BaseModel):
     type: AgentRuntimeType | None = None
     entrypoint: str
     cwd: str | None = None
+    container: "ContainerRuntimeContract | None" = None
     timeout_s: float
     max_concurrency: int
 
@@ -216,7 +224,53 @@ class AgentRuntimeSpec(BaseModel):
             raise ValueError(
                 "Python runtime entrypoint must use format 'module.path:function'."
             )
+        if self.runtime is AgentRuntimeKind.CONTAINER and self.container is None:
+            raise ValueError(
+                "Container runtime requires runtime.container (image/command/env/io_contract)."
+            )
+        if self.runtime is not AgentRuntimeKind.CONTAINER and self.container is not None:
+            raise ValueError("runtime.container is only allowed when runtime='container'.")
         return self
+
+
+class ContainerRuntimeContract(BaseModel):
+    """Container execution contract surface."""
+
+    image: str
+    command: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    io_contract: ContainerIOContract = ContainerIOContract.JSON_STDIO
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Container image must be non-empty.")
+        return normalized
+
+    @field_validator("command")
+    @classmethod
+    def validate_command(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            normalized_item = item.strip()
+            if not normalized_item:
+                raise ValueError("Container command entries must be non-empty.")
+            normalized.append(normalized_item)
+        return normalized
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, env_value in value.items():
+            normalized_key = key.strip()
+            normalized_value = env_value.strip()
+            if not normalized_key or not normalized_value:
+                raise ValueError("Container env keys/values must be non-empty strings.")
+            normalized[normalized_key] = normalized_value
+        return normalized
 
 
 class AgentOperationCapability(BaseModel):

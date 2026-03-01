@@ -239,4 +239,4 @@ def test_container_runtime_adapter_is_stub() -> None:
     result = adapter.execute(request)
 
     assert result.status is ExecutionStatus.FAILED
-    assert result.error == "Container runtime adapter is not implemented."
+    assert result.error == "Unsupported runtime for V1: container runtime adapter is not implemented."

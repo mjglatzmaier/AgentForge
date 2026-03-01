@@ -93,3 +93,40 @@ def test_agent_spec_requires_python_entrypoint_module_function_format() -> None:
     payload["runtime"]["entrypoint"] = "agents.arxiv_research.entrypoint"
     with pytest.raises(ValidationError, match="module.path:function"):
         AgentSpec.model_validate(payload)
+
+
+def test_agent_spec_accepts_container_runtime_contract_surface() -> None:
+    payload = _agent_spec_payload()
+    payload["runtime"] = {
+        "runtime": "container",
+        "type": "container",
+        "entrypoint": "unused.container.entrypoint",
+        "container": {
+            "image": "ghcr.io/example/arxiv-agent:1.0.0",
+            "command": ["python", "-m", "agent_entrypoint"],
+            "env": {"PYTHONUNBUFFERED": "1"},
+            "io_contract": "json-stdio",
+        },
+        "timeout_s": 120,
+        "max_concurrency": 2,
+    }
+    spec = AgentSpec.model_validate(payload)
+    assert spec.runtime.runtime.value == "container"
+    assert spec.runtime.container is not None
+    assert spec.runtime.container.image == "ghcr.io/example/arxiv-agent:1.0.0"
+    assert spec.runtime.container.command == ["python", "-m", "agent_entrypoint"]
+    assert spec.runtime.container.env == {"PYTHONUNBUFFERED": "1"}
+    assert spec.runtime.container.io_contract.value == "json-stdio"
+
+
+def test_agent_spec_requires_container_contract_when_runtime_is_container() -> None:
+    payload = _agent_spec_payload()
+    payload["runtime"] = {
+        "runtime": "container",
+        "type": "container",
+        "entrypoint": "unused.container.entrypoint",
+        "timeout_s": 120,
+        "max_concurrency": 2,
+    }
+    with pytest.raises(ValidationError, match="requires runtime.container"):
+        AgentSpec.model_validate(payload)

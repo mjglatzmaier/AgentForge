@@ -328,3 +328,57 @@ def test_execute_control_run_emits_retry_attempt_metadata_on_retry(tmp_path: Pat
         if event.event_type is ControlEventType.NODE_READY and event.payload.get("retry_attempt") == 1
     ]
     assert ready_retry_events
+
+
+def test_execute_control_run_uses_container_adapter_and_returns_explicit_unsupported_error(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "runs" / "run-007"
+    plan = ControlPlan(
+        plan_id="plan-7",
+        trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
+        nodes=[ControlNode(node_id="container_node", agent_id="agent.container", operation="pipeline")],
+    )
+    container_spec = AgentSpec.model_validate(
+        {
+            "agent_id": "agent.container",
+            "version": "1.0.0",
+            "description": "container agent",
+            "intents": ["test"],
+            "tags": ["container"],
+            "input_contracts": ["Req"],
+            "output_contracts": ["Res"],
+            "runtime": {
+                "runtime": "container",
+                "type": "container",
+                "entrypoint": "unused.container.entrypoint",
+                "container": {
+                    "image": "ghcr.io/example/container-agent:1.0.0",
+                    "command": ["python", "-m", "entrypoint"],
+                    "env": {"PYTHONUNBUFFERED": "1"},
+                    "io_contract": "json-stdio",
+                },
+                "timeout_s": 30,
+                "max_concurrency": 1,
+            },
+            "operations_policy": {
+                "terminal_access": "none",
+                "allowed_commands": [],
+                "fs_scope": [],
+                "network_access": "none",
+                "network_allowlist": [],
+            },
+        }
+    )
+    registry = AgentRegistry(
+        agents_by_id={"agent.container": container_spec},
+        capability_index={},
+    )
+    _persist_run_artifacts(run_dir=run_dir, plan=plan, registry=registry)
+
+    result = execute_control_run(run_dir)
+
+    assert result.node_states == {"container_node": ControlNodeState.FAILED}
+    assert result.node_results["container_node"].status is ExecutionStatus.FAILED
+    assert result.node_results["container_node"].error is not None
+    assert "Unsupported runtime for V1" in result.node_results["container_node"].error

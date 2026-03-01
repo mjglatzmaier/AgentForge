@@ -128,7 +128,7 @@ class ContainerRuntimeAdapter(RuntimeAdapter):
             )
         return ExecutionResult(
             status=ExecutionStatus.FAILED,
-            error="Container runtime adapter is not implemented.",
+            error="Unsupported runtime for V1: container runtime adapter is not implemented.",
             adapter=self.name,
             adapter_version=self.version,
             latency_ms=0,

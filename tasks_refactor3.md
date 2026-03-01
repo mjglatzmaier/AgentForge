@@ -616,7 +616,7 @@ Acceptance criteria:
   - preserve replay-mode deterministic behavior contract
   - surface explicit failure messages (no silent fallback)
 
-- [ ] 8c.1 Introduce runtime adapter seam for future container plugins:
+- [X] 8c.1 Introduce runtime adapter seam for future container plugins:
   - keep control-plane execution path runtime-agnostic via `RuntimeAdapter` selection
   - define container runtime contract surface in spec/docs (image/command/env/io contract)
   - if container runtime is not implemented in V1, return explicit unsupported-runtime errors
