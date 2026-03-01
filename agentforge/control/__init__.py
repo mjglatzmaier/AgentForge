@@ -12,6 +12,10 @@ from agentforge.control.events import (
     load_control_events,
     replay_control_events,
 )
+from agentforge.control.handoff import (
+    resolve_node_inputs_from_manifest,
+    validate_ingest_snapshot_artifacts,
+)
 from agentforge.control.registry import (
     AgentRegistry,
     build_registry_snapshot,
@@ -34,7 +38,9 @@ __all__ = [
     "load_control_events",
     "load_agent_registry",
     "plan_scheduler_tick",
+    "resolve_node_inputs_from_manifest",
     "replay_control_events",
     "persist_control_artifacts",
     "SchedulerTick",
+    "validate_ingest_snapshot_artifacts",
 ]

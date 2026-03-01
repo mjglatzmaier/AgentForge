@@ -285,7 +285,7 @@ Acceptance criteria:
   - execute up to ControlPlan.max_parallel
   - enforce per-agent max_concurrency
   - deterministic tie-break for ready nodes (node_id)
-- [ ] 4.2 Artifact handoff:
+- [X] 4.2 Artifact handoff:
   - downstream reads inputs strictly by manifest refs
   - ingest steps must write snapshot artifacts (determinism boundary)
 - [ ] 4.3 Failure semantics:
