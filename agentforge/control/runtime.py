@@ -13,11 +13,13 @@ from agentforge.control.adapters import (
     PythonRuntimeAdapter,
     RuntimeAdapter,
 )
+from agentforge.control.handoff import resolve_node_inputs_from_manifest
 from agentforge.control.registry import AgentRegistry
 from agentforge.control.scheduler import plan_scheduler_tick
 from agentforge.contracts.models import (
     AgentRuntimeKind,
     AgentSpec,
+    ArtifactRef,
     ControlNode,
     ControlNodeState,
     ControlPlan,
@@ -25,6 +27,7 @@ from agentforge.contracts.models import (
     ExecutionResult,
     ExecutionStatus,
 )
+from agentforge.storage.manifest import init_manifest, register_artifacts, save_manifest
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,8 @@ def execute_control_run(
     run_path = Path(run_dir)
     plan = _load_control_plan(run_path)
     registry = _load_registry_snapshot(run_path)
+    manifest_path = run_path / "manifest.json"
+    manifest = init_manifest(manifest_path, run_id=run_path.name)
     adapters = dict(runtime_adapters or _default_runtime_adapters())
     nodes_by_id = {node.node_id: node for node in plan.nodes}
     node_index = {node.node_id: i for i, node in enumerate(plan.nodes)}
@@ -74,6 +79,7 @@ def execute_control_run(
             spec = registry.get(node.agent_id)
             if spec is None:
                 raise ValueError(f"AgentSpec not found in registry for node '{node_id}': {node.agent_id}")
+            resolved_inputs = resolve_node_inputs_from_manifest(node, manifest)
 
             adapter = adapters.get(spec.runtime.runtime)
             if adapter is None:
@@ -89,8 +95,19 @@ def execute_control_run(
                 node=node,
                 node_index=node_index[node_id],
                 spec=spec,
+                resolved_inputs=resolved_inputs,
             )
             result = adapter.execute(request)
+            if result.status is ExecutionStatus.SUCCESS and result.produced_artifacts:
+                bridged_artifacts = _bridge_result_artifacts(
+                    run_path=run_path,
+                    node=node,
+                    node_index=node_index[node_id],
+                    produced_artifacts=result.produced_artifacts,
+                )
+                register_artifacts(manifest, bridged_artifacts)
+                save_manifest(manifest_path, manifest)
+                result = result.model_copy(update={"produced_artifacts": bridged_artifacts})
             node_results[node_id] = result
 
             node_states[node_id] = (
@@ -121,6 +138,7 @@ def _build_execution_request(
     node: ControlNode,
     node_index: int,
     spec: AgentSpec,
+    resolved_inputs: Mapping[str, ArtifactRef],
 ) -> ExecutionRequest:
     step_dir = run_path / "steps" / f"{node_index:02d}_{node.node_id}"
     outputs_dir = step_dir / "outputs"
@@ -131,6 +149,10 @@ def _build_execution_request(
     metadata.setdefault("step_dir", str(step_dir))
     metadata.setdefault("outputs_dir", str(outputs_dir))
     metadata.setdefault("cwd", spec.runtime.cwd or str(run_path))
+    metadata["input_artifacts"] = {
+        name: artifact.model_dump(mode="json")
+        for name, artifact in resolved_inputs.items()
+    }
 
     if spec.runtime.runtime is AgentRuntimeKind.PYTHON:
         metadata["entrypoint"] = spec.runtime.entrypoint
@@ -144,11 +166,40 @@ def _build_execution_request(
         agent_id=node.agent_id,
         operation=node.operation,
         runtime=spec.runtime.runtime,
-        inputs=list(node.inputs),
+        inputs=list(resolved_inputs.keys()),
         timeout_s=timeout_s,
         policy_snapshot=spec.operations_policy.model_dump(mode="json"),
         metadata=metadata,
     )
+
+
+def _bridge_result_artifacts(
+    *,
+    run_path: Path,
+    node: ControlNode,
+    node_index: int,
+    produced_artifacts: list[ArtifactRef],
+) -> list[ArtifactRef]:
+    step_prefix = f"steps/{node_index:02d}_{node.node_id}"
+    step_outputs_prefix = f"{step_prefix}/outputs/"
+    bridged: list[ArtifactRef] = []
+
+    for artifact in produced_artifacts:
+        path = artifact.path.strip().replace("\\", "/")
+        if path.startswith("outputs/"):
+            path = f"{step_prefix}/{path}"
+        if not path.startswith(step_outputs_prefix):
+            raise ValueError(
+                f"Node '{node.node_id}' produced artifact path outside step outputs/: {artifact.path}"
+            )
+        if not (run_path / path).is_file():
+            raise ValueError(
+                f"Node '{node.node_id}' produced missing artifact file: {path}"
+            )
+        bridged.append(
+            artifact.model_copy(update={"path": path, "producer_step_id": node.node_id})
+        )
+    return bridged
 
 
 def _load_control_plan(run_path: Path) -> ControlPlan:

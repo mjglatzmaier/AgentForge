@@ -569,7 +569,7 @@ Enable true production use of `agentforge dispatch/status/resume` and execute th
   - construct `ExecutionRequest` per ready node
   - execute via `RuntimeAdapter` selection from `AgentSpec.runtime`
   - consume `ExecutionResult` and persist node state transitions
-- [ ] 7.2 Artifact registration bridge:
+- [X] 7.2 Artifact registration bridge:
   - register node outputs in `manifest.json` as `ArtifactRef`
   - enforce unique artifact names and path validation via existing manifest utilities
   - ensure downstream nodes read inputs strictly from manifest refs

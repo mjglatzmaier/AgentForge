@@ -8,7 +8,10 @@ import pytest
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot
 from agentforge.control.runtime import execute_control_run
 from agentforge.control.state import persist_control_artifacts
+from agentforge.storage.hashing import sha256_file
+from agentforge.storage.manifest import load_manifest
 from agentforge.contracts.models import (
+    ArtifactRef,
     AgentSpec,
     ControlNode,
     ControlNodeState,
@@ -29,6 +32,24 @@ def _entrypoint_success(request: ExecutionRequest) -> dict[str, object]:
 
 def _entrypoint_failure(_request: ExecutionRequest) -> dict[str, object]:
     return {"status": "failed", "error": "simulated failure"}
+
+
+def _entrypoint_emits_artifact(request: ExecutionRequest) -> dict[str, object]:
+    outputs_dir = Path(request.metadata["outputs_dir"])
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{request.operation}.txt"
+    artifact_name = str(request.metadata.get("output_name", f"{request.operation}_txt"))
+    content = f"artifact for {request.operation}"
+    file_path = outputs_dir / file_name
+    file_path.write_text(content, encoding="utf-8")
+    artifact = ArtifactRef(
+        name=artifact_name,
+        type="text",
+        path=f"outputs/{file_name}",
+        sha256=sha256_file(file_path),
+        producer_step_id="ignored",
+    )
+    return {"status": "success", "produced_artifacts": [artifact]}
 
 
 def _agent_spec(*, agent_id: str, entrypoint: str) -> AgentSpec:
@@ -78,12 +99,19 @@ def test_execute_control_run_executes_ready_nodes_and_persists_transitions(tmp_p
         plan_id="plan-1",
         trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
         nodes=[
-            ControlNode(node_id="fetch", agent_id="agent.test", operation="fetch_and_snapshot"),
+            ControlNode(
+                node_id="fetch",
+                agent_id="agent.test",
+                operation="fetch_and_snapshot",
+                metadata={"output_name": "papers_raw"},
+            ),
             ControlNode(
                 node_id="synthesize",
                 agent_id="agent.test",
                 operation="synthesize_digest",
                 depends_on=["fetch"],
+                inputs=["papers_raw"],
+                metadata={"output_name": "digest_json"},
             ),
         ],
         max_parallel=1,
@@ -92,7 +120,7 @@ def test_execute_control_run_executes_ready_nodes_and_persists_transitions(tmp_p
         agents_by_id={
             "agent.test": _agent_spec(
                 agent_id="agent.test",
-                entrypoint="agentforge.tests.control.test_runtime:_entrypoint_success",
+                entrypoint="agentforge.tests.control.test_runtime:_entrypoint_emits_artifact",
             )
         },
         capability_index={},
@@ -113,6 +141,12 @@ def test_execute_control_run_executes_ready_nodes_and_persists_transitions(tmp_p
     assert runtime_state["node_states"] == {"fetch": "succeeded", "synthesize": "succeeded"}
     assert (run_dir / "steps" / "00_fetch" / "outputs").is_dir()
     assert (run_dir / "steps" / "01_synthesize" / "outputs").is_dir()
+    manifest = load_manifest(run_dir / "manifest.json")
+    assert [artifact.name for artifact in manifest.artifacts] == ["papers_raw", "digest_json"]
+    assert manifest.artifacts[0].path == "steps/00_fetch/outputs/fetch_and_snapshot.txt"
+    assert manifest.artifacts[0].producer_step_id == "fetch"
+    assert manifest.artifacts[1].path == "steps/01_synthesize/outputs/synthesize_digest.txt"
+    assert manifest.artifacts[1].producer_step_id == "synthesize"
 
 
 def test_execute_control_run_marks_failed_result_state(tmp_path: Path) -> None:
@@ -155,4 +189,69 @@ def test_execute_control_run_fails_when_agent_missing_from_registry(tmp_path: Pa
     )
 
     with pytest.raises(ValueError, match="AgentSpec not found"):
+        execute_control_run(run_dir)
+
+
+def test_execute_control_run_rejects_duplicate_artifact_names(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-004"
+    plan = ControlPlan(
+        plan_id="plan-4",
+        trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
+        nodes=[
+            ControlNode(
+                node_id="first",
+                agent_id="agent.test",
+                operation="op_first",
+                metadata={"output_name": "dup_artifact"},
+            ),
+            ControlNode(
+                node_id="second",
+                agent_id="agent.test",
+                operation="op_second",
+                depends_on=["first"],
+                metadata={"output_name": "dup_artifact"},
+            ),
+        ],
+    )
+    registry = AgentRegistry(
+        agents_by_id={
+            "agent.test": _agent_spec(
+                agent_id="agent.test",
+                entrypoint="agentforge.tests.control.test_runtime:_entrypoint_emits_artifact",
+            )
+        },
+        capability_index={},
+    )
+    _persist_run_artifacts(run_dir=run_dir, plan=plan, registry=registry)
+
+    with pytest.raises(ValueError, match="Artifact already registered"):
+        execute_control_run(run_dir)
+
+
+def test_execute_control_run_requires_manifest_input_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-005"
+    plan = ControlPlan(
+        plan_id="plan-5",
+        trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
+        nodes=[
+            ControlNode(
+                node_id="synthesize",
+                agent_id="agent.test",
+                operation="synthesize_digest",
+                inputs=["papers_raw"],
+            )
+        ],
+    )
+    registry = AgentRegistry(
+        agents_by_id={
+            "agent.test": _agent_spec(
+                agent_id="agent.test",
+                entrypoint="agentforge.tests.control.test_runtime:_entrypoint_success",
+            )
+        },
+        capability_index={},
+    )
+    _persist_run_artifacts(run_dir=run_dir, plan=plan, registry=registry)
+
+    with pytest.raises(KeyError, match="requires missing manifest artifact"):
         execute_control_run(run_dir)
