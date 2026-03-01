@@ -297,6 +297,30 @@ def test_run_validates_required_inputs_for_score_operation(tmp_path: Path) -> No
     assert "requires manifest input artifact" in result.error
 
 
+def test_run_validates_enrichment_snapshot_required_for_score_replay(
+    tmp_path: Path,
+) -> None:
+    request = _request(
+        tmp_path=tmp_path,
+        operation="score_papers",
+        mode="replay",
+        inputs=["papers_raw"],
+        input_artifacts={
+            "papers_raw": _artifact_payload(name="papers_raw", path="snapshots/papers_raw.json")
+        },
+    )
+    request.metadata["config"] = {
+        "mode": "replay",
+        "scoring": {"enrichment": {"enabled": True}},
+    }
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "scoring_enrichment_snapshot" in result.error
+
+
 def test_run_requires_snapshot_inputs_for_fetch_replay_before_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -234,6 +234,9 @@ def _required_metadata_str(request: ExecutionRequest, key: str) -> str:
 def _validate_operation_contract(request: ExecutionRequest) -> None:
     operation = request.operation.strip()
     mode = _mode_from_request(request)
+    config = request.metadata.get("config", {})
+    if not isinstance(config, dict):
+        raise TypeError("ExecutionRequest metadata.config must be a mapping when provided.")
 
     required_inputs: set[str] = set()
     require_any_of: set[str] = set()
@@ -241,6 +244,8 @@ def _validate_operation_contract(request: ExecutionRequest) -> None:
         require_any_of = {"papers_selected", "papers_raw"}
     elif operation == "score_papers":
         required_inputs = {"papers_raw"}
+        if mode == "replay" and _is_replay_enrichment_enabled(config):
+            required_inputs.add("scoring_enrichment_snapshot")
     elif operation == "render_report":
         required_inputs = {"digest_json"}
     elif operation == "fetch_and_snapshot" and mode == "replay":
@@ -256,6 +261,16 @@ def _validate_operation_contract(request: ExecutionRequest) -> None:
         raise ValueError(
             f"Operation '{operation}' requires at least one manifest input artifact: {required}."
         )
+
+
+def _is_replay_enrichment_enabled(config: dict[str, Any]) -> bool:
+    scoring = config.get("scoring", {})
+    if not isinstance(scoring, dict):
+        return False
+    enrichment = scoring.get("enrichment", {})
+    if not isinstance(enrichment, dict):
+        return False
+    return bool(enrichment.get("enabled", False))
 
 
 def _mode_from_request(request: ExecutionRequest) -> str:

@@ -37,6 +37,7 @@ capabilities:
         - papers_scored
         - papers_selected
         - scoring_diagnostics
+        - scoring_enrichment_snapshot
     - name: render_report
       inputs:
         - digest_json

@@ -209,9 +209,9 @@ Acceptance:
 ---
 
 ### Phase S6 — Replay Determinism + Enrichment Hook
-- [ ] S6.1 Implement optional enrichment adapter interface (disabled by default)
-- [ ] S6.2 If enrichment used live, snapshot signals to artifact
-- [ ] S6.3 In replay, consume only snapshots (no network)
+- [X] S6.1 Implement optional enrichment adapter interface (disabled by default)
+- [X] S6.2 If enrichment used live, snapshot signals to artifact
+- [X] S6.3 In replay, consume only snapshots (no network)
 
 Acceptance:
 - replay parity verified with and without enrichment path

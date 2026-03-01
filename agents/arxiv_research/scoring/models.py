@@ -187,4 +187,7 @@ class ScoringDiagnostics(BaseModel):
     candidate_count: int = Field(ge=0)
     selected_count: int = Field(ge=0)
     dropped_below_threshold: int = Field(default=0, ge=0)
+    enrichment_enabled: bool = False
+    enrichment_source: str | None = None
+    enrichment_signal_count: int = Field(default=0, ge=0)
     notes: list[str] = Field(default_factory=list)
