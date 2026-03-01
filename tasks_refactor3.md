@@ -232,22 +232,22 @@ Acceptance criteria:
 
 ## Phase 2 — AgentSpec v1 + Agent Pack Discovery
 
-- [ ] 2.1 Define `AgentSpec` schema (`agent.yaml`):
+- [X] 2.1 Define `AgentSpec` schema (`agent.yaml`):
   - identity: `agent_id`, `version`, `description`
   - capability metadata: `intents`, `tags`
   - interfaces: `input_contracts`, `output_contracts`
   - runtime: `runtime`, `entrypoint`, `cwd`, `timeout_s`, `max_concurrency`
   - operations_policy: `terminal_access`, `allowed_commands`, `fs_scope`,
     `network_access`, `network_allowlist`
-- [ ] 2.2 Implement discovery:
+- [X] 2.2 Implement discovery:
   - `agents/` (demo)
   - `agents_packs/*/agents/` (submodules)
   - dirs from `AGENTFORGE_AGENT_PACKS_DIRS`
-- [ ] 2.3 Build `AgentRegistry`:
+- [X] 2.3 Build `AgentRegistry`:
   - deterministic load order
   - deterministic capability index
   - deterministic tie-break rules (agent_id lexical or explicit priority)
-- [ ] 2.4 Export registry snapshot to `runs/<run_id>/control/registry.json`
+- [X] 2.4 Export registry snapshot to `runs/<run_id>/control/registry.json`
 
 Acceptance criteria:
 - Registry loads deterministically and errors clearly.
@@ -257,18 +257,18 @@ Acceptance criteria:
 
 ## Phase 3 — Execution Plane Boundary + Runtime Adapters
 
-- [ ] 3.1 Define `ExecutionRequest` and `ExecutionResult`:
+- [X] 3.1 Define `ExecutionRequest` and `ExecutionResult`:
   - request: run_id/node_id/agent_id/operation/runtime/inputs/timeout/policy/metadata
   - result: status/produced_artifacts/metrics/error/latency_ms/adapter info
-- [ ] 3.2 Implement adapters:
+- [X] 3.2 Implement adapters:
   - `PythonRuntimeAdapter` (module:function entrypoint)
   - `CommandRuntimeAdapter` (command template; Node/npm supported)
   - `ContainerRuntimeAdapter` (stub)
-- [ ] 3.3 Define and enforce operations_policy semantics (guardrails):
+- [X] 3.3 Define and enforce operations_policy semantics (guardrails):
   - command allowlist checks
   - fs_scope allowlist checks
   - network allowlist best-effort checks
-- [ ] 3.4 Define V1 OS support matrix:
+- [X] 3.4 Define V1 OS support matrix:
   - Unix/macOS only (explicit)
   - path normalization rules for artifacts (POSIX-style)
 
