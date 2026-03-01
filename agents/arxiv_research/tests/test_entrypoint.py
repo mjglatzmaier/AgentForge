@@ -104,6 +104,39 @@ def test_run_dispatches_synthesize_digest_with_resolved_input_paths(
     assert called["ctx"]["inputs"]["papers_raw"]["abs_path"] == str(papers_path.resolve())
 
 
+def test_run_dispatches_synthesize_digest_with_selected_input_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected_path = tmp_path / "snapshots" / "papers_selected.json"
+    selected_path.parent.mkdir(parents=True, exist_ok=True)
+    selected_path.write_text("[]", encoding="utf-8")
+    called: dict[str, Any] = {}
+
+    def _stub(ctx: dict[str, Any]) -> dict[str, Any]:
+        called["ctx"] = ctx
+        return {"outputs": [], "metrics": {"papers": 0}}
+
+    monkeypatch.setattr(entrypoint, "synthesize_digest", _stub)
+    request = _request(
+        tmp_path=tmp_path,
+        operation="synthesize_digest",
+        inputs=["papers_selected"],
+        input_artifacts={
+            "papers_selected": _artifact_payload(
+                name="papers_selected", path="snapshots/papers_selected.json"
+            )
+        },
+    )
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.metrics["papers"] == 0
+    assert called["ctx"]["inputs"]["papers_selected"]["abs_path"] == str(
+        selected_path.resolve()
+    )
+
+
 def test_run_dispatches_score_papers_with_resolved_input_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -251,7 +284,7 @@ def test_run_validates_required_inputs_for_operation(tmp_path: Path) -> None:
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
-    assert "requires manifest input artifact" in result.error
+    assert "requires at least one manifest input artifact" in result.error
 
 
 def test_run_validates_required_inputs_for_score_operation(tmp_path: Path) -> None:

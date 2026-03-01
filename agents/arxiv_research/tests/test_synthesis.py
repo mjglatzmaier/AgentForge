@@ -48,6 +48,81 @@ class _ProviderStub:
         )
 
 
+def test_synthesize_digest_prefers_selected_input_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selected_payload = [
+        {
+            "paper_id": "selected-1",
+            "title": "Selected Paper",
+            "authors": ["Alice"],
+            "abstract": "Selected abstract",
+            "categories": ["cs.AI"],
+            "published": "2026-01-01T00:00:00Z",
+        }
+    ]
+    raw_payload = [
+        {
+            "paper_id": "raw-1",
+            "title": "Raw Paper",
+            "authors": ["Bob"],
+            "abstract": "Raw abstract",
+            "categories": ["cs.LG"],
+            "published": "2026-01-02T00:00:00Z",
+        }
+    ]
+    selected_path = tmp_path / "papers_selected.json"
+    raw_path = tmp_path / "papers_raw.json"
+    selected_path.write_text(json.dumps(selected_payload), encoding="utf-8")
+    raw_path.write_text(json.dumps(raw_payload), encoding="utf-8")
+
+    digest = ResearchDigest(
+        query="agent systems",
+        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
+        papers=[ResearchPaper.model_validate(selected_payload[0])],
+        highlights=[DigestBullet(text="Selected-only citation", cited_paper_ids=["selected-1"])],
+    )
+    provider = _ProviderStub(digest)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
+
+    result = synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {
+                "papers_selected": {"abs_path": str(selected_path)},
+                "papers_raw": {"abs_path": str(raw_path)},
+            },
+            "config": {"mode": "replay"},
+        }
+    )
+
+    assert result["metrics"]["papers"] == 1
+
+
+def test_synthesize_digest_falls_back_to_raw_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    digest = ResearchDigest(
+        query="agent systems",
+        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
+        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
+        highlights=[DigestBullet(text="Raw fallback citation", cited_paper_ids=["2401.00001v1"])],
+    )
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(digest))
+
+    result = synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay"},
+        }
+    )
+
+    assert result["metrics"]["papers"] == 2
+
+
 def test_synthesize_digest_uses_provider_and_writes_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

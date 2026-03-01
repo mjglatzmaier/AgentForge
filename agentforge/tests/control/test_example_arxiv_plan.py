@@ -25,12 +25,22 @@ def test_arxiv_example_plans_validate_as_control_plan(plan_name: str) -> None:
     plan = ControlPlan.model_validate(payload)
 
     assert plan.plan_id
-    assert [node.node_id for node in plan.nodes] == [
-        "fetch_and_snapshot",
-        "synthesize_digest",
-        "render_report",
-        "local_write_delivery",
-    ]
+    node_ids = [node.node_id for node in plan.nodes]
+    if plan_name.startswith("arxiv_llm_"):
+        assert node_ids == [
+            "fetch_and_snapshot",
+            "score_papers",
+            "synthesize_digest",
+            "render_report",
+            "local_write_delivery",
+        ]
+    else:
+        assert node_ids == [
+            "fetch_and_snapshot",
+            "synthesize_digest",
+            "render_report",
+            "local_write_delivery",
+        ]
     fetch_cfg = plan.nodes[0].metadata["config"]
     assert fetch_cfg["mode"] == "live"
     assert fetch_cfg["query"]
@@ -42,5 +52,10 @@ def test_arxiv_example_plans_validate_as_control_plan(plan_name: str) -> None:
         assert "topic_alignment" in weights
         assert "citations" in weights
         assert "credibility" in weights
-    assert plan.nodes[1].depends_on == ["fetch_and_snapshot"]
-    assert plan.nodes[2].depends_on == ["synthesize_digest"]
+    if plan_name.startswith("arxiv_llm_"):
+        assert plan.nodes[1].depends_on == ["fetch_and_snapshot"]
+        assert plan.nodes[2].depends_on == ["score_papers"]
+        assert plan.nodes[3].depends_on == ["synthesize_digest"]
+    else:
+        assert plan.nodes[1].depends_on == ["fetch_and_snapshot"]
+        assert plan.nodes[2].depends_on == ["synthesize_digest"]

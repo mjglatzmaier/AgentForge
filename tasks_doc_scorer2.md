@@ -198,9 +198,9 @@ Acceptance:
 ---
 
 ### Phase S5 — Pipeline Wiring to Synthesis
-- [ ] S5.1 Update example plan(s) to insert `score_papers` node
-- [ ] S5.2 Update synthesis to prefer `papers_selected` input
-- [ ] S5.3 Keep backward compatibility (`papers_raw` fallback)
+- [X] S5.1 Update example plan(s) to insert `score_papers` node
+- [X] S5.2 Update synthesis to prefer `papers_selected` input
+- [X] S5.3 Keep backward compatibility (`papers_raw` fallback)
 
 Acceptance:
 - ranked plans work without breaking existing non-ranked plans

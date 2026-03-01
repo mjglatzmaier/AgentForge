@@ -23,7 +23,7 @@ _DEFAULT_MAX_OUTPUT_TOKENS = 2000
 
 
 def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
-    papers = _load_papers_input(ctx, "papers_raw")
+    papers = _load_synthesis_papers(ctx)
     prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
     for key, value in settings.items():
@@ -123,6 +123,15 @@ def _load_papers_input(ctx: dict[str, Any], artifact_name: str) -> list[Research
     if not isinstance(payload, list):
         raise TypeError(f"Input artifact '{artifact_name}' must contain a JSON list.")
     return [ResearchPaper.model_validate(item) for item in payload]
+
+
+def _load_synthesis_papers(ctx: dict[str, Any]) -> list[ResearchPaper]:
+    inputs = ctx.get("inputs", {})
+    if isinstance(inputs, dict) and "papers_selected" in inputs:
+        return _load_papers_input(ctx, "papers_selected")
+    if isinstance(inputs, dict) and "papers_raw" in inputs:
+        return _load_papers_input(ctx, "papers_raw")
+    raise KeyError("Missing required input artifact: papers_selected or papers_raw")
 
 
 def _require_input_artifact(ctx: dict[str, Any], artifact_name: str) -> dict[str, Any]:

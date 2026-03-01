@@ -26,6 +26,7 @@ capabilities:
         - papers_raw
     - name: synthesize_digest
       inputs:
+        - papers_selected
         - papers_raw
       outputs:
         - digest_json

@@ -28,12 +28,23 @@ nodes:
             recency: 0.1
             methodological_rigor: 0.1
 
+  - node_id: score_papers
+    agent_id: arxiv.research
+    operation: score_papers
+    inputs: [papers_raw]
+    outputs: [papers_scored, papers_selected, scoring_diagnostics]
+    depends_on: [fetch_and_snapshot]
+    metadata:
+      config:
+        scoring:
+          enabled: true
+
   - node_id: synthesize_digest
     agent_id: arxiv.research
     operation: synthesize_digest
-    inputs: [papers_raw]
+    inputs: [papers_selected]
     outputs: [digest_json]
-    depends_on: [fetch_and_snapshot]
+    depends_on: [score_papers]
     metadata:
       config:
         mode: replay

@@ -236,7 +236,10 @@ def _validate_operation_contract(request: ExecutionRequest) -> None:
     mode = _mode_from_request(request)
 
     required_inputs: set[str] = set()
-    if operation in {"synthesize_digest", "score_papers"}:
+    require_any_of: set[str] = set()
+    if operation == "synthesize_digest":
+        require_any_of = {"papers_selected", "papers_raw"}
+    elif operation == "score_papers":
         required_inputs = {"papers_raw"}
     elif operation == "render_report":
         required_inputs = {"digest_json"}
@@ -247,6 +250,11 @@ def _validate_operation_contract(request: ExecutionRequest) -> None:
     if missing:
         raise ValueError(
             f"Operation '{operation}' requires manifest input artifact(s): {missing}."
+        )
+    if require_any_of and not (set(request.inputs) & require_any_of):
+        required = " or ".join(sorted(require_any_of))
+        raise ValueError(
+            f"Operation '{operation}' requires at least one manifest input artifact: {required}."
         )
 
 
