@@ -31,6 +31,36 @@ def _python_entrypoint_ok(request: ExecutionRequest) -> dict[str, object]:
     return {"status": "success", "metrics": {"count": len(request.inputs)}}
 
 
+def _python_entrypoint_windows_artifact(_request: ExecutionRequest) -> dict[str, object]:
+    return {
+        "status": "success",
+        "produced_artifacts": [
+            {
+                "name": "result_json",
+                "type": "json",
+                "path": "steps\\01_node\\outputs\\result.json",
+                "sha256": "a" * 64,
+                "producer_step_id": "01_node",
+            }
+        ],
+    }
+
+
+def _python_entrypoint_bad_artifact(_request: ExecutionRequest) -> dict[str, object]:
+    return {
+        "status": "success",
+        "produced_artifacts": [
+            {
+                "name": "result_json",
+                "type": "json",
+                "path": "../result.json",
+                "sha256": "a" * 64,
+                "producer_step_id": "01_node",
+            }
+        ],
+    }
+
+
 def test_python_runtime_adapter_executes_module_function_entrypoint() -> None:
     adapter = PythonRuntimeAdapter()
     request = _request(
@@ -156,6 +186,50 @@ def test_python_runtime_adapter_enforces_network_allowlist() -> None:
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
     assert "not allowed" in result.error
+
+
+def test_python_runtime_adapter_normalizes_artifact_paths_to_posix() -> None:
+    adapter = PythonRuntimeAdapter()
+    request = _request(
+        runtime="python",
+        metadata={
+            "entrypoint": "agentforge.tests.control.test_adapters:_python_entrypoint_windows_artifact"
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.produced_artifacts[0].path == "steps/01_node/outputs/result.json"
+
+
+def test_python_runtime_adapter_rejects_unsafe_artifact_path() -> None:
+    adapter = PythonRuntimeAdapter()
+    request = _request(
+        runtime="python",
+        metadata={"entrypoint": "agentforge.tests.control.test_adapters:_python_entrypoint_bad_artifact"},
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "must not contain '..'" in result.error
+
+
+def test_command_runtime_adapter_rejects_unsupported_os(monkeypatch) -> None:
+    monkeypatch.setattr("agentforge.control.adapters.platform.system", lambda: "Windows")
+    adapter = CommandRuntimeAdapter()
+    request = _request(
+        runtime="command",
+        metadata={"command": [sys.executable, "-c", "print('ok')"]},
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "only Unix/macOS are supported" in result.error
 
 
 def test_container_runtime_adapter_is_stub() -> None:

@@ -268,7 +268,7 @@ Acceptance criteria:
   - command allowlist checks
   - fs_scope allowlist checks
   - network allowlist best-effort checks
-- [ ] 3.4 Define V1 OS support matrix:
+- [X] 3.4 Define V1 OS support matrix:
   - Unix/macOS only (explicit)
   - path normalization rules for artifacts (POSIX-style)
 

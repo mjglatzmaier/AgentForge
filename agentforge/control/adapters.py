@@ -7,9 +7,11 @@ from importlib import import_module
 from time import perf_counter
 from typing import Any, Callable
 import subprocess
-from pathlib import Path
+import platform
+from pathlib import Path, PurePosixPath
 
 from agentforge.contracts.models import (
+    ArtifactRef,
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
@@ -38,11 +40,13 @@ class PythonRuntimeAdapter(RuntimeAdapter):
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         started = perf_counter()
         try:
+            _enforce_v1_os_support()
             _enforce_policy(request, command=None)
             entrypoint = _required_metadata_string(request, "entrypoint")
             target = _resolve_entrypoint(entrypoint)
             payload = target(request)
             result = _coerce_execution_result(payload, adapter=self.name, version=self.version)
+            result = _normalize_result_artifact_paths(result)
             if result.latency_ms is None:
                 result.latency_ms = int((perf_counter() - started) * 1000)
             return result
@@ -65,6 +69,7 @@ class CommandRuntimeAdapter(RuntimeAdapter):
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         started = perf_counter()
         try:
+            _enforce_v1_os_support()
             command = _required_command(request)
             _enforce_policy(request, command=command)
             cwd = request.metadata.get("cwd")
@@ -110,6 +115,17 @@ class ContainerRuntimeAdapter(RuntimeAdapter):
     name = "container-runtime"
 
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
+        try:
+            _enforce_v1_os_support()
+        except Exception as exc:
+            return ExecutionResult(
+                status=ExecutionStatus.FAILED,
+                error=str(exc),
+                traceback_excerpt=type(exc).__name__,
+                adapter=self.name,
+                adapter_version=self.version,
+                latency_ms=0,
+            )
         return ExecutionResult(
             status=ExecutionStatus.FAILED,
             error="Container runtime adapter is not implemented.",
@@ -254,3 +270,31 @@ def _is_within(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _enforce_v1_os_support() -> None:
+    if platform.system() not in {"Darwin", "Linux"}:
+        raise ValueError("Unsupported OS for V1 runtime adapters: only Unix/macOS are supported.")
+
+
+def _normalize_result_artifact_paths(result: ExecutionResult) -> ExecutionResult:
+    if not result.produced_artifacts:
+        return result
+
+    normalized: list[ArtifactRef] = []
+    for artifact in result.produced_artifacts:
+        normalized_path = _normalize_posix_artifact_path(artifact.path)
+        normalized.append(artifact.model_copy(update={"path": normalized_path}))
+    return result.model_copy(update={"produced_artifacts": normalized})
+
+
+def _normalize_posix_artifact_path(path: str) -> str:
+    replaced = path.replace("\\", "/").strip()
+    if not replaced:
+        raise ValueError("Artifact path must be non-empty.")
+    if replaced.startswith("/") or (len(replaced) >= 2 and replaced[1] == ":"):
+        raise ValueError("Artifact path must be relative and POSIX-style.")
+    posix = PurePosixPath(replaced)
+    if ".." in posix.parts:
+        raise ValueError("Artifact path must not contain '..'.")
+    return posix.as_posix()
