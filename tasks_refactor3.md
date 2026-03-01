@@ -586,7 +586,7 @@ Acceptance criteria:
 
 ### Phase 8 — Agent Plugin Architecture (8a/8b/8c)
 
-- [ ] 8a.1 Define plugin execution contract (typed + stable):
+- [X] 8a.1 Define plugin execution contract (typed + stable):
   - canonical plugin entrypoint signature:
     - `run(request: ExecutionRequest) -> ExecutionResult`
   - operation dispatch strictly by `request.operation`

@@ -17,6 +17,7 @@ from agentforge.control.handoff import (
     resolve_node_inputs_from_manifest,
     validate_ingest_snapshot_artifacts,
 )
+from agentforge.control.plugin_contract import PluginEntrypoint, dispatch_plugin_operation
 from agentforge.control.registry import (
     AgentRegistry,
     build_registry_snapshot,
@@ -47,6 +48,8 @@ __all__ = [
     "replay_control_events",
     "persist_control_artifacts",
     "persist_final_control_snapshot",
+    "PluginEntrypoint",
+    "dispatch_plugin_operation",
     "SchedulerTick",
     "validate_ingest_snapshot_artifacts",
 ]
