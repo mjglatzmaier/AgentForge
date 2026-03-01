@@ -8,6 +8,7 @@ from agents.arxiv_research.models import (
     parse_research_digest,
 )
 from agents.arxiv_research.ingest import fetch_and_snapshot
+from agents.arxiv_research.synthesis import synthesize_digest
 
 __all__ = [
     "DigestBullet",
@@ -15,5 +16,6 @@ __all__ = [
     "ResearchPaper",
     "ResearchRequest",
     "fetch_and_snapshot",
+    "synthesize_digest",
     "parse_research_digest",
 ]

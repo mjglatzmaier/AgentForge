@@ -447,16 +447,16 @@ Acceptance criteria:
 
 ## 6.4 Implement Synthesis (LLM Provider Abstraction)
 
-- [ ] 6.4.1 Use provider interface from Phase 3+:
+- [X] 6.4.1 Use provider interface from Phase 3+:
   - `generate_json(prompt, schema)` → `ResearchDigest`
-- [ ] 6.4.2 Prompt must:
+- [X] 6.4.2 Prompt must:
   - Summarize key contributions.
   - Produce bullet highlights.
   - Require citation via `cited_paper_ids`.
-- [ ] 6.4.3 Validate:
+- [X] 6.4.3 Validate:
   - All cited_paper_ids must exist in papers list.
   - Reject uncited highlights.
-- [ ] 6.4.4 Determinism behavior:
+- [X] 6.4.4 Determinism behavior:
   - replay mode is the contract for deterministic synthesis verification
   - live mode uses pinned model + stable prompt + optional seed (best-effort only)
 
