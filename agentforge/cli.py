@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
+from uuid import uuid4
 
-from agentforge.contracts.models import Mode, TriggerKind, TriggerSpec
+from agentforge.contracts.models import ArtifactRef, Mode, TriggerKind, TriggerSpec
 from agentforge.orchestrator.runner import run_pipeline
+from agentforge.storage.hashing import sha256_file
+from agentforge.storage.manifest import init_manifest, register_artifact, save_manifest
+from agentforge.storage.run_layout import create_run_layout
 
 
 class CLIValidationError(ValueError):
@@ -85,7 +90,11 @@ def run_cli(argv: list[str] | None = None) -> int:
 
         if args.command == "dispatch":
             _build_trigger_spec(args)
-            raise RuntimeError("dispatch command is not implemented yet")
+            run_id = _persist_dispatch_request_artifact(
+                request_path=Path(args.request),
+                base_dir=Path(args.base_dir),
+            )
+            raise RuntimeError(f"dispatch command is not implemented yet (run_id={run_id})")
 
         if args.command == "resume":
             raise RuntimeError("resume command is not implemented yet")
@@ -116,3 +125,29 @@ def _build_trigger_spec(args: argparse.Namespace) -> TriggerSpec:
         event_type=getattr(args, "event_type", None),
         source=getattr(args, "trigger_source", None),
     )
+
+
+def _persist_dispatch_request_artifact(*, request_path: Path, base_dir: Path) -> str:
+    if not request_path.exists():
+        raise FileNotFoundError(f"Request file not found: {request_path}")
+    if not request_path.is_file():
+        raise ValueError(f"Request path must be a file: {request_path}")
+
+    run_id = str(uuid4())
+    layout = create_run_layout(base_dir, run_id)
+    manifest = init_manifest(layout.manifest_json, run_id=run_id)
+
+    dest = layout.run_dir / "control" / "inputs" / "request.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(request_path, dest)
+
+    artifact = ArtifactRef(
+        name="request_json",
+        type="json",
+        path=dest.resolve().relative_to(layout.run_dir.resolve()).as_posix(),
+        sha256=sha256_file(dest),
+        producer_step_id="dispatch_request",
+    )
+    register_artifact(manifest, artifact)
+    save_manifest(layout.manifest_json, manifest)
+    return run_id

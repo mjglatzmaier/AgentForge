@@ -312,7 +312,7 @@ Acceptance criteria:
   - `TriggerSpec.kind=manual` for CLI runs
   - `TriggerSpec.kind=schedule` for cron-driven runs (OS cron calls CLI)
   - `TriggerSpec.kind=event` for webhook/manual event triggers
-- [ ] 5.3 Ensure request payload is stored as an input artifact for reproducibility.
+- [X] 5.3 Ensure request payload is stored as an input artifact for reproducibility.
 
 Acceptance criteria:
 - V1 supports ad-hoc and scheduled/event-triggered batch runs.

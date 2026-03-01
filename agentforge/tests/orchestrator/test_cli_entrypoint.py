@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -162,6 +163,18 @@ def test_cli_dispatch_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
         check=False,
     )
     assert completed.returncode == 2
+    run_dirs = [path for path in (tmp_path / "runs").iterdir() if path.name != ".cache"]
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+    request_copy = run_dir / "control" / "inputs" / "request.json"
+    assert request_copy.read_text(encoding="utf-8") == "{}"
+
+    manifest_payload = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest_payload["run_id"] == run_dir.name
+    artifacts = manifest_payload["artifacts"]
+    assert len(artifacts) == 1
+    assert artifacts[0]["name"] == "request_json"
+    assert artifacts[0]["path"] == "control/inputs/request.json"
 
 
 def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
