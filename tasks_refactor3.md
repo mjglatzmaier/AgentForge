@@ -648,7 +648,7 @@ Acceptance criteria:
   - default single-agent/single-plan dispatch path
   - support loading a plan file override (e.g., `examples/arxiv_digest_plan.yaml`) when provided
   - validate agent existence in registry before run start
-- [ ] 9.3 Terminal output and exit codes:
+- [X] 9.3 Terminal output and exit codes:
   - print run_id on success
   - non-recoverable execution errors return exit code 1
   - internal/runtime failures return exit code 2 with concise error

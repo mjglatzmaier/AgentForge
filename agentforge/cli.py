@@ -11,11 +11,13 @@ from uuid import uuid4
 import yaml
 
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot, load_agent_registry
+from agentforge.control.runtime import ControlRunExecution, execute_control_run
 from agentforge.control.state import persist_control_artifacts
 from agentforge.contracts.models import (
     ArtifactRef,
     ControlNode,
     ControlPlan,
+    ExecutionStatus,
     Mode,
     TriggerKind,
     TriggerSpec,
@@ -109,7 +111,16 @@ def run_cli(argv: list[str] | None = None) -> int:
                 trigger=trigger,
                 plan_path=Path(args.plan) if args.plan else None,
             )
-            raise RuntimeError(f"dispatch command is not implemented yet (run_id={run_id})")
+            run_dir = Path(args.base_dir) / "runs" / run_id
+            try:
+                execution = execute_control_run(run_dir)
+            except Exception as exc:  # map runtime/execution-plane failures to exit code 2
+                raise RuntimeError(f"dispatch runtime failure (run_id={run_id}): {exc}") from exc
+            failure_message = _dispatch_failure_message(run_id=run_id, execution=execution)
+            if failure_message:
+                raise RuntimeError(failure_message)
+            print(run_id)
+            return 0
 
         if args.command == "resume":
             raise RuntimeError("resume command is not implemented yet")
@@ -233,3 +244,17 @@ def _validate_plan_agents_exist(*, plan: ControlPlan, agent_id: str, registry: A
     missing = sorted({node.agent_id for node in plan.nodes if registry.get(node.agent_id) is None})
     if missing:
         raise ValueError(f"ControlPlan references unknown agent_id(s): {missing}")
+
+
+def _dispatch_failure_message(*, run_id: str, execution: ControlRunExecution) -> str | None:
+    failed_node_ids = sorted(
+        node_id
+        for node_id, result in execution.node_results.items()
+        if result.status is ExecutionStatus.FAILED
+    )
+    if not failed_node_ids:
+        return None
+    node_id = failed_node_ids[0]
+    result = execution.node_results[node_id]
+    detail = result.error or result.traceback_excerpt or "execution failed"
+    return f"dispatch failed (run_id={run_id}, node_id={node_id}): {detail}"
