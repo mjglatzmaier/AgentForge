@@ -16,7 +16,7 @@ nodes:
           ("large language model" OR LLM OR transformer) AND
           ("scaling laws" OR scaling OR finetuning OR "parameter-efficient tuning" OR trend OR benchmark OR physics)
         categories: [cs.CL, cs.LG, cs.AI, stat.ML]
-        max_results: 5
+        max_results: 200
         sort_by: relevance
         ranking:
           factors: [topic_alignment, citations, credibility, engagement, recency, methodological_rigor]
@@ -38,6 +38,9 @@ nodes:
       config:
         scoring:
           enabled: true
+          select_m: 50
+          top_k: 5
+          min_score_threshold: 0.0
 
   - node_id: synthesize_digest
     agent_id: arxiv.research
@@ -48,6 +51,7 @@ nodes:
     metadata:
       config:
         mode: replay
+        max_highlights: 10
 
   - node_id: render_report
     agent_id: arxiv.research
