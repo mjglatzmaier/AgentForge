@@ -16,7 +16,7 @@ nodes:
           ("large language model" OR LLM OR transformer) AND
           ("scaling laws" OR scaling OR finetuning OR "parameter-efficient tuning" OR trend OR benchmark OR physics)
         categories: [cs.CL, cs.LG, cs.AI, stat.ML]
-        max_results: 40
+        max_results: 5
         sort_by: relevance
         ranking:
           factors: [topic_alignment, citations, credibility, engagement, recency, methodological_rigor]
