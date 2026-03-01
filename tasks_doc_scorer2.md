@@ -187,10 +187,10 @@ Acceptance:
 ---
 
 ### Phase S4 — Step Integration (`score_papers`)
-- [ ] S4.1 Add `scoring_step.py` using step-style ctx contract
-- [ ] S4.2 Add `score_papers` route in `entrypoint.py`
-- [ ] S4.3 Add operation metadata in `agents/arxiv_research/agent.yaml`
-- [ ] S4.4 Validate required input artifact mapping (`papers_raw`)
+- [X] S4.1 Add `scoring_step.py` using step-style ctx contract
+- [X] S4.2 Add `score_papers` route in `entrypoint.py`
+- [X] S4.3 Add operation metadata in `agents/arxiv_research/agent.yaml`
+- [X] S4.4 Validate required input artifact mapping (`papers_raw`)
 
 Acceptance:
 - control runtime can execute scorer operation end-to-end

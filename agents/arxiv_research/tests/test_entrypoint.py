@@ -104,6 +104,60 @@ def test_run_dispatches_synthesize_digest_with_resolved_input_paths(
     assert called["ctx"]["inputs"]["papers_raw"]["abs_path"] == str(papers_path.resolve())
 
 
+def test_run_dispatches_score_papers_with_resolved_input_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "snapshots" / "papers_raw.json"
+    papers_path.parent.mkdir(parents=True, exist_ok=True)
+    papers_path.write_text("[]", encoding="utf-8")
+    called: dict[str, Any] = {}
+
+    def _stub(ctx: dict[str, Any]) -> dict[str, Any]:
+        called["ctx"] = ctx
+        outputs_dir = Path(ctx["step_dir"]) / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        (outputs_dir / "papers_scored.json").write_text("[]", encoding="utf-8")
+        (outputs_dir / "papers_selected.json").write_text("[]", encoding="utf-8")
+        (outputs_dir / "scoring_diagnostics.json").write_text("{}", encoding="utf-8")
+        return {
+            "outputs": [
+                {"name": "papers_scored", "type": "json", "path": "outputs/papers_scored.json"},
+                {
+                    "name": "papers_selected",
+                    "type": "json",
+                    "path": "outputs/papers_selected.json",
+                },
+                {
+                    "name": "scoring_diagnostics",
+                    "type": "json",
+                    "path": "outputs/scoring_diagnostics.json",
+                },
+            ],
+            "metrics": {"selected_count": 0},
+        }
+
+    monkeypatch.setattr(entrypoint, "score_papers", _stub)
+    request = _request(
+        tmp_path=tmp_path,
+        operation="score_papers",
+        inputs=["papers_raw"],
+        input_artifacts={
+            "papers_raw": _artifact_payload(name="papers_raw", path="snapshots/papers_raw.json")
+        },
+    )
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.metrics["selected_count"] == 0
+    assert called["ctx"]["inputs"]["papers_raw"]["abs_path"] == str(papers_path.resolve())
+    assert {artifact.name for artifact in result.produced_artifacts} == {
+        "papers_scored",
+        "papers_selected",
+        "scoring_diagnostics",
+    }
+
+
 def test_run_dispatches_render_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     digest_path = tmp_path / "steps" / "01_prior" / "outputs" / "digest.json"
     digest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +246,16 @@ def test_run_rejects_non_outputs_relative_paths(tmp_path: Path, monkeypatch: pyt
 
 def test_run_validates_required_inputs_for_operation(tmp_path: Path) -> None:
     request = _request(tmp_path=tmp_path, operation="synthesize_digest", mode="replay")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "requires manifest input artifact" in result.error
+
+
+def test_run_validates_required_inputs_for_score_operation(tmp_path: Path) -> None:
+    request = _request(tmp_path=tmp_path, operation="score_papers", mode="replay")
 
     result = entrypoint.run(request)
 

@@ -29,6 +29,13 @@ capabilities:
         - papers_raw
       outputs:
         - digest_json
+    - name: score_papers
+      inputs:
+        - papers_raw
+      outputs:
+        - papers_scored
+        - papers_selected
+        - scoring_diagnostics
     - name: render_report
       inputs:
         - digest_json

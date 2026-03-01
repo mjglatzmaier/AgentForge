@@ -10,6 +10,7 @@ from agentforge.contracts.models import ArtifactRef, ExecutionRequest, Execution
 from agentforge.storage.hashing import sha256_file
 from agents.arxiv_research.ingest import fetch_and_snapshot
 from agents.arxiv_research.render import render_report
+from agents.arxiv_research.scoring_step import score_papers
 from agents.arxiv_research.synthesis import synthesize_digest
 
 _ADAPTER = "arxiv-plugin"
@@ -24,6 +25,7 @@ def run(request: ExecutionRequest) -> ExecutionResult:
             request,
             operations={
                 "fetch_and_snapshot": _run_fetch_and_snapshot,
+                "score_papers": _run_score_papers,
                 "synthesize_digest": _run_synthesize_digest,
                 "render_report": _run_render_report,
                 "local_write_delivery": _run_local_write_delivery,
@@ -39,6 +41,10 @@ def _run_fetch_and_snapshot(request: ExecutionRequest) -> ExecutionResult:
 
 def _run_synthesize_digest(request: ExecutionRequest) -> ExecutionResult:
     return _execute_step_operation(request, synthesize_digest)
+
+
+def _run_score_papers(request: ExecutionRequest) -> ExecutionResult:
+    return _execute_step_operation(request, score_papers)
 
 
 def _run_render_report(request: ExecutionRequest) -> ExecutionResult:
@@ -230,7 +236,7 @@ def _validate_operation_contract(request: ExecutionRequest) -> None:
     mode = _mode_from_request(request)
 
     required_inputs: set[str] = set()
-    if operation == "synthesize_digest":
+    if operation in {"synthesize_digest", "score_papers"}:
         required_inputs = {"papers_raw"}
     elif operation == "render_report":
         required_inputs = {"digest_json"}

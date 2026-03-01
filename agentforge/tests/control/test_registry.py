@@ -145,6 +145,7 @@ def test_arxiv_research_agentspec_validates_under_registry() -> None:
     assert [operation.name for operation in spec.capabilities.operations] == [
         "fetch_and_snapshot",
         "synthesize_digest",
+        "score_papers",
         "render_report",
     ]
     assert spec.operations_policy.network_allowlist == ["export.arxiv.org"]
