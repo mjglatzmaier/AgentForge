@@ -154,9 +154,9 @@ Do not change global `agentforge/contracts/models.py` unless strictly needed.
 ## Phased Tasks
 
 ### Phase S1 — Contracts + Models
-- [ ] S1.1 Add scorer models in `agents/arxiv_research/scoring/models.py`
-- [ ] S1.2 Add config parser from `ctx["config"]["scoring"]` with defaults
-- [ ] S1.3 Add unit tests for model validation and defaults
+- [X] S1.1 Add scorer models in `agents/arxiv_research/scoring/models.py`
+- [X] S1.2 Add config parser from `ctx["config"]["scoring"]` with defaults
+- [X] S1.3 Add unit tests for model validation and defaults
 
 Acceptance:
 - valid/invalid scoring config behavior is fully tested
