@@ -29,5 +29,5 @@ def test_resolve_ref_rejects_non_callable_object() -> None:
 
 
 def test_resolve_ref_resolves_agents_step_callable() -> None:
-    resolved = resolve_ref("agents.research_digest.src.steps:fetch_arxiv")
+    resolved = resolve_ref("agents.arxiv_research.ingest:fetch_and_snapshot")
     assert callable(resolved)

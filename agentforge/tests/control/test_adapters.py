@@ -239,4 +239,54 @@ def test_container_runtime_adapter_is_stub() -> None:
     result = adapter.execute(request)
 
     assert result.status is ExecutionStatus.FAILED
-    assert result.error == "Container runtime adapter is not implemented."
+    assert result.error == "Unsupported runtime for V1: container runtime adapter is not implemented."
+
+
+def test_command_runtime_adapter_supports_json_stdio_contract() -> None:
+    adapter = CommandRuntimeAdapter()
+    script = (
+        "import json,sys;"
+        "json.load(sys.stdin);"
+        "print(json.dumps({'schema_version':1,'result':{"
+        "'status':'success',"
+        "'produced_artifacts':[{'name':'result_json','type':'json','path':'steps\\\\01_node\\\\outputs\\\\result.json','sha256':'"
+        + ("a" * 64)
+        + "','producer_step_id':'node-1'}],"
+        "'metrics':{'interop':'ok'},"
+        "'adapter':'plugin-js'"
+        "}}))"
+    )
+    request = _request(
+        runtime="command",
+        metadata={
+            "command": [sys.executable, "-c", script],
+            "cwd": str(Path.cwd()),
+            "io_contract": "json-stdio",
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.SUCCESS
+    assert result.metrics["interop"] == "ok"
+    assert result.produced_artifacts[0].path == "steps/01_node/outputs/result.json"
+    assert result.adapter == "command-runtime"
+
+
+def test_command_runtime_adapter_rejects_invalid_json_stdio_payload() -> None:
+    adapter = CommandRuntimeAdapter()
+    script = "import sys; sys.stdin.read(); print('not-json')"
+    request = _request(
+        runtime="command",
+        metadata={
+            "command": [sys.executable, "-c", script],
+            "cwd": str(Path.cwd()),
+            "io_contract": "json-stdio",
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "invalid JSON" in result.error

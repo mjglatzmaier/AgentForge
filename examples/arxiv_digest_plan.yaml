@@ -1,0 +1,44 @@
+plan_id: arxiv-digest-demo-v1
+max_parallel: 2
+policy_snapshot: {}
+trigger:
+  kind: manual
+  source: cli
+nodes:
+  - node_id: fetch_and_snapshot
+    agent_id: arxiv.research
+    operation: fetch_and_snapshot
+    outputs: [raw_feed_xml, papers_raw]
+    metadata:
+      config:
+        mode: live
+        query: "(agent OR tool use OR planning) AND (cat:cs.AI OR cat:cs.LG)"
+        categories: [cs.AI, cs.LG, cs.CL]
+        max_results: 25
+        sort_by: relevance
+
+  - node_id: synthesize_digest
+    agent_id: arxiv.research
+    operation: synthesize_digest
+    inputs: [papers_raw]
+    outputs: [digest_json]
+    depends_on: [fetch_and_snapshot]
+    metadata:
+      config:
+        mode: replay
+
+  - node_id: render_report
+    agent_id: arxiv.research
+    operation: render_report
+    inputs: [digest_json]
+    outputs: [report_md, sources_json]
+    depends_on: [synthesize_digest]
+
+  - node_id: local_write_delivery
+    agent_id: arxiv.research
+    operation: local_write_delivery
+    inputs: [report_md]
+    outputs: [delivery_path]
+    depends_on: [render_report]
+    metadata:
+      optional: true

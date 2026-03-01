@@ -1,0 +1,352 @@
+"""Control-plane run executor."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Mapping
+from uuid import uuid4
+
+from agentforge.control.adapters import (
+    CommandRuntimeAdapter,
+    ContainerRuntimeAdapter,
+    PythonRuntimeAdapter,
+    RuntimeAdapter,
+)
+from agentforge.control.events import append_node_transition_event
+from agentforge.control.handoff import resolve_node_inputs_from_manifest
+from agentforge.control.registry import AgentRegistry
+from agentforge.control.scheduler import plan_scheduler_tick
+from agentforge.control.state import persist_final_control_snapshot
+from agentforge.contracts.models import (
+    AgentRuntimeKind,
+    AgentSpec,
+    ArtifactRef,
+    ControlNode,
+    ControlNodeState,
+    ControlPlan,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutionStatus,
+)
+from agentforge.storage.manifest import init_manifest, register_artifacts, save_manifest
+
+
+@dataclass(frozen=True)
+class ControlRunExecution:
+    """Final node states and execution results for one control-plan run."""
+
+    plan_id: str
+    node_states: dict[str, ControlNodeState]
+    node_results: dict[str, ExecutionResult]
+
+
+def execute_control_run(
+    run_dir: str | Path,
+    *,
+    runtime_adapters: Mapping[AgentRuntimeKind, RuntimeAdapter] | None = None,
+    node_states: Mapping[str, ControlNodeState] | None = None,
+    retry_counts: Mapping[str, int] | None = None,
+) -> ControlRunExecution:
+    """Execute one control plan from persisted run artifacts."""
+
+    run_path = Path(run_dir)
+    plan = _load_control_plan(run_path)
+    registry = _load_registry_snapshot(run_path)
+    manifest_path = run_path / "manifest.json"
+    manifest = init_manifest(manifest_path, run_id=run_path.name)
+    adapters = dict(runtime_adapters or _default_runtime_adapters())
+    nodes_by_id = {node.node_id: node for node in plan.nodes}
+    node_index = {node.node_id: i for i, node in enumerate(plan.nodes)}
+
+    node_states = _merge_initial_node_states(plan=plan, node_states=node_states)
+    node_results: dict[str, ExecutionResult] = {}
+    mutable_retry_counts = dict(retry_counts or {})
+    last_event_id: str | None = None
+    _persist_runtime_state(run_path, plan=plan, node_states=node_states)
+
+    while True:
+        before_tick = dict(node_states)
+        tick = plan_scheduler_tick(
+            plan,
+            node_states=node_states,
+            retry_counts=mutable_retry_counts,
+        )
+        node_states = dict(tick.node_states)
+        if node_states != before_tick:
+            for node_id in sorted(node_states):
+                if before_tick[node_id] is node_states[node_id]:
+                    continue
+                if node_states[node_id] is not ControlNodeState.READY:
+                    continue
+                payload: dict[str, object] = {}
+                if before_tick[node_id] is ControlNodeState.FAILED:
+                    payload["retry_attempt"] = mutable_retry_counts.get(node_id, 0)
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.READY,
+                    payload=payload,
+                )
+            _persist_runtime_state(run_path, plan=plan, node_states=node_states)
+
+        if not tick.dispatch_node_ids:
+            break
+
+        for node_id in tick.dispatch_node_ids:
+            node = nodes_by_id[node_id]
+            spec = registry.get(node.agent_id)
+            if spec is None:
+                raise ValueError(f"AgentSpec not found in registry for node '{node_id}': {node.agent_id}")
+            resolved_inputs = resolve_node_inputs_from_manifest(node, manifest)
+
+            adapter = adapters.get(spec.runtime.runtime)
+            if adapter is None:
+                raise ValueError(
+                    f"No RuntimeAdapter configured for runtime '{spec.runtime.runtime.value}'."
+                )
+
+            node_states[node_id] = ControlNodeState.RUNNING
+            start_payload: dict[str, object] = {}
+            if mutable_retry_counts.get(node_id, 0) > 0:
+                start_payload["retry_attempt"] = mutable_retry_counts[node_id]
+            last_event_id = _append_transition(
+                run_path=run_path,
+                node_id=node_id,
+                to_state=ControlNodeState.RUNNING,
+                payload=start_payload,
+            )
+            _persist_runtime_state(run_path, plan=plan, node_states=node_states)
+
+            request = _build_execution_request(
+                run_path=run_path,
+                node=node,
+                node_index=node_index[node_id],
+                spec=spec,
+                resolved_inputs=resolved_inputs,
+            )
+            result = adapter.execute(request)
+            if result.status is ExecutionStatus.SUCCESS and result.produced_artifacts:
+                bridged_artifacts = _bridge_result_artifacts(
+                    run_path=run_path,
+                    node=node,
+                    node_index=node_index[node_id],
+                    produced_artifacts=result.produced_artifacts,
+                )
+                register_artifacts(manifest, bridged_artifacts)
+                save_manifest(manifest_path, manifest)
+                result = result.model_copy(update={"produced_artifacts": bridged_artifacts})
+            node_results[node_id] = result
+
+            if result.status is ExecutionStatus.SUCCESS:
+                node_states[node_id] = ControlNodeState.SUCCEEDED
+                complete_payload: dict[str, object] = {}
+                if mutable_retry_counts.get(node_id, 0) > 0:
+                    complete_payload["retry_attempt"] = mutable_retry_counts[node_id]
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.SUCCEEDED,
+                    payload=complete_payload,
+                )
+            else:
+                node_states[node_id] = ControlNodeState.FAILED
+                mutable_retry_counts[node_id] = mutable_retry_counts.get(node_id, 0) + 1
+                last_event_id = _append_transition(
+                    run_path=run_path,
+                    node_id=node_id,
+                    to_state=ControlNodeState.FAILED,
+                    payload={"retry_attempt": mutable_retry_counts[node_id]},
+                )
+            _persist_runtime_state(run_path, plan=plan, node_states=node_states)
+
+    persist_final_control_snapshot(
+        run_path,
+        plan=plan,
+        node_states=node_states,
+        last_event_id=last_event_id,
+    )
+    return ControlRunExecution(
+        plan_id=plan.plan_id,
+        node_states=node_states,
+        node_results=node_results,
+    )
+
+
+def _merge_initial_node_states(
+    *,
+    plan: ControlPlan,
+    node_states: Mapping[str, ControlNodeState] | None,
+) -> dict[str, ControlNodeState]:
+    states = {node.node_id: node.state for node in plan.nodes}
+    if node_states is None:
+        return states
+    for node_id, state in node_states.items():
+        if node_id not in states:
+            raise ValueError(f"Unknown node_id in initial control state: {node_id}")
+        states[node_id] = state
+    return states
+
+
+def _default_runtime_adapters() -> dict[AgentRuntimeKind, RuntimeAdapter]:
+    return {
+        AgentRuntimeKind.PYTHON: PythonRuntimeAdapter(),
+        AgentRuntimeKind.COMMAND: CommandRuntimeAdapter(),
+        AgentRuntimeKind.CONTAINER: ContainerRuntimeAdapter(),
+    }
+
+
+def _build_execution_request(
+    *,
+    run_path: Path,
+    node: ControlNode,
+    node_index: int,
+    spec: AgentSpec,
+    resolved_inputs: Mapping[str, ArtifactRef],
+) -> ExecutionRequest:
+    step_dir = run_path / "steps" / f"{node_index:02d}_{node.node_id}"
+    outputs_dir = step_dir / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata = dict(node.metadata)
+    metadata.setdefault("run_dir", str(run_path))
+    metadata.setdefault("step_dir", str(step_dir))
+    metadata.setdefault("outputs_dir", str(outputs_dir))
+    metadata.setdefault("cwd", spec.runtime.cwd or str(run_path))
+    metadata["input_artifacts"] = {
+        name: artifact.model_dump(mode="json")
+        for name, artifact in resolved_inputs.items()
+    }
+
+    if spec.runtime.runtime is AgentRuntimeKind.PYTHON:
+        metadata["entrypoint"] = spec.runtime.entrypoint
+    elif spec.runtime.runtime is AgentRuntimeKind.COMMAND:
+        metadata.setdefault("command", [spec.runtime.entrypoint])
+
+    timeout_s = node.timeout_s if node.timeout_s is not None else spec.runtime.timeout_s
+    return ExecutionRequest(
+        run_id=run_path.name,
+        node_id=node.node_id,
+        agent_id=node.agent_id,
+        operation=node.operation,
+        runtime=spec.runtime.runtime,
+        inputs=list(resolved_inputs.keys()),
+        timeout_s=timeout_s,
+        policy_snapshot=spec.operations_policy.model_dump(mode="json"),
+        metadata=metadata,
+    )
+
+
+def _bridge_result_artifacts(
+    *,
+    run_path: Path,
+    node: ControlNode,
+    node_index: int,
+    produced_artifacts: list[ArtifactRef],
+) -> list[ArtifactRef]:
+    step_prefix = f"steps/{node_index:02d}_{node.node_id}"
+    step_outputs_prefix = f"{step_prefix}/outputs/"
+    bridged: list[ArtifactRef] = []
+
+    for artifact in produced_artifacts:
+        path = artifact.path.strip().replace("\\", "/")
+        if path.startswith("outputs/"):
+            path = f"{step_prefix}/{path}"
+        if not path.startswith(step_outputs_prefix):
+            raise ValueError(
+                f"Node '{node.node_id}' produced artifact path outside step outputs/: {artifact.path}"
+            )
+        if not (run_path / path).is_file():
+            raise ValueError(
+                f"Node '{node.node_id}' produced missing artifact file: {path}"
+            )
+        bridged.append(
+            artifact.model_copy(update={"path": path, "producer_step_id": node.node_id})
+        )
+    return bridged
+
+
+def _load_control_plan(run_path: Path) -> ControlPlan:
+    path = run_path / "control" / "plan.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Control plan not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return ControlPlan.model_validate(payload)
+
+
+def _load_registry_snapshot(run_path: Path) -> AgentRegistry:
+    path = run_path / "control" / "registry.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Registry snapshot not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    agents_raw = payload.get("agents")
+    if not isinstance(agents_raw, list):
+        raise ValueError("Invalid registry snapshot: 'agents' must be a list.")
+
+    agents_by_id: dict[str, AgentSpec] = {}
+    for item in agents_raw:
+        spec = AgentSpec.model_validate(item)
+        if spec.agent_id in agents_by_id:
+            raise ValueError(f"Duplicate agent_id in registry snapshot: {spec.agent_id}")
+        agents_by_id[spec.agent_id] = spec
+
+    capability_index_raw = payload.get("capability_index", {})
+    capability_index: dict[str, tuple[str, ...]] = {}
+    if isinstance(capability_index_raw, dict):
+        for capability, agent_ids in capability_index_raw.items():
+            if not isinstance(capability, str):
+                raise ValueError("Invalid registry snapshot: capability index keys must be strings.")
+            if not isinstance(agent_ids, list) or not all(isinstance(item, str) for item in agent_ids):
+                raise ValueError(
+                    "Invalid registry snapshot: capability index values must be string lists."
+                )
+            capability_index[capability] = tuple(agent_ids)
+
+    return AgentRegistry(
+        agents_by_id=dict(sorted(agents_by_id.items())),
+        capability_index=capability_index,
+    )
+
+
+def _persist_runtime_state(
+    run_path: Path,
+    *,
+    plan: ControlPlan,
+    node_states: Mapping[str, ControlNodeState],
+) -> Path:
+    payload = {
+        "schema_version": 1,
+        "plan_id": plan.plan_id,
+        "node_states": {node_id: node_states[node_id].value for node_id in sorted(node_states)},
+    }
+    state_path = run_path / "control" / "runtime_state.json"
+    _write_json_atomic(state_path, payload)
+    return state_path
+
+
+def _write_json_atomic(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _append_transition(
+    *,
+    run_path: Path,
+    node_id: str,
+    to_state: ControlNodeState,
+    payload: Mapping[str, object] | None = None,
+) -> str:
+    event_id = f"evt-{uuid4().hex}"
+    append_node_transition_event(
+        run_path,
+        event_id=event_id,
+        timestamp_utc=datetime.now(timezone.utc),
+        node_id=node_id,
+        to_state=to_state,
+        payload=dict(payload or {}),
+    )
+    return event_id

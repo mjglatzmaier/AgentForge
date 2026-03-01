@@ -90,11 +90,11 @@ OS support:
 ---
 
 You are working in the AgentForge repository.
-Use model: GPT-5.3-Codex.
+Use model: GP-5.3-Codex.
 
 Task:
-Complete EXACTLY the following task ID: [Phase 5 (5.3)]
-Source of truth file: tasks_refactor3.md (use what the task references).
+Complete EXACTLY the following task ID: [Phase S7 (7.1, 7.2, 7.3, 7.4)]
+Source of truth file: tasks_doc_scorer2.md (use what the task references).
 Do NOT implement anything beyond this task.
 
 Constraints (must follow):
@@ -122,4 +122,4 @@ D) Suggested Conventional Commit message (title + body).
 E) Exact checkbox lines (copy/paste) that should be marked complete in the source task file.
 F) Whether docs/architecture.md or .github/copilot-instructions.md require updates (yes/no + why).
 
-Now implement [Phase 5 (5.3)].
+Now implement [Phase S7 (7.1, 7.2, 7.3, 7.4)].

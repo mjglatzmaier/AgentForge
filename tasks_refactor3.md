@@ -363,7 +363,7 @@ tests/
 
 ## 6.1 Define ArXivResearch AgentSpec
 
-- [ ] 6.1.1 Create `agents/arxiv_research/agent.yaml`:
+- [X] 6.1.1 Create `agents/arxiv_research/agent.yaml`:
   - identity:
     - agent_id: "arxiv.research"
     - version: "1.0.0"
@@ -397,25 +397,25 @@ Acceptance criteria:
 
 ## 6.2 Define Input / Output Schemas
 
-- [ ] 6.2.1 Implement `ResearchRequest`:
+- [X] 6.2.1 Implement `ResearchRequest`:
   - query: str
   - max_results: int
   - categories: list[str] | None
   - sort_by: "relevance" | "lastUpdatedDate"
   - mode: "live" | "replay"
-- [ ] 6.2.2 Implement `ResearchPaper`:
+- [X] 6.2.2 Implement `ResearchPaper`:
   - paper_id
   - title
   - authors
   - abstract
   - categories
   - published
-- [ ] 6.2.3 Implement `ResearchDigest`:
+- [X] 6.2.3 Implement `ResearchDigest`:
   - query
   - generated_at_utc
   - papers: list[ResearchPaper]
   - highlights: list[DigestBullet]
-- [ ] 6.2.4 `DigestBullet`:
+- [X] 6.2.4 `DigestBullet`:
   - text
   - cited_paper_ids: list[str]
 
@@ -428,13 +428,13 @@ Acceptance criteria:
 
 ## 6.3 Implement Deterministic Ingest + Snapshot Boundary
 
-- [ ] 6.3.1 Ingest step:
+- [X] 6.3.1 Ingest step:
   - Fetch ArXiv Atom feed (export.arxiv.org).
   - Parse into structured `ResearchPaper`.
-- [ ] 6.3.2 Write raw snapshot artifact:
+- [X] 6.3.2 Write raw snapshot artifact:
   - `raw_feed.xml`
   - `papers_raw.json`
-- [ ] 6.3.3 Determinism rule:
+- [X] 6.3.3 Determinism rule:
   - If `mode=replay`, skip network call and load from snapshot artifact.
   - Snapshot artifact is required input in replay mode.
 
@@ -447,16 +447,16 @@ Acceptance criteria:
 
 ## 6.4 Implement Synthesis (LLM Provider Abstraction)
 
-- [ ] 6.4.1 Use provider interface from Phase 3+:
+- [X] 6.4.1 Use provider interface from Phase 3+:
   - `generate_json(prompt, schema)` → `ResearchDigest`
-- [ ] 6.4.2 Prompt must:
+- [X] 6.4.2 Prompt must:
   - Summarize key contributions.
   - Produce bullet highlights.
   - Require citation via `cited_paper_ids`.
-- [ ] 6.4.3 Validate:
+- [X] 6.4.3 Validate:
   - All cited_paper_ids must exist in papers list.
   - Reject uncited highlights.
-- [ ] 6.4.4 Determinism behavior:
+- [X] 6.4.4 Determinism behavior:
   - replay mode is the contract for deterministic synthesis verification
   - live mode uses pinned model + stable prompt + optional seed (best-effort only)
 
@@ -469,12 +469,12 @@ Acceptance criteria:
 
 ## 6.5 Render Report Artifact
 
-- [ ] 6.5.1 Render `report.md`:
+- [X] 6.5.1 Render `report.md`:
   - Title
   - Query
   - Table of papers
   - Highlights section with inline citations
-- [ ] 6.5.2 Write artifacts:
+- [X] 6.5.2 Write artifacts:
   - `digest.json`
   - `report.md`
   - `sources.json` (paper metadata)
@@ -487,7 +487,7 @@ Acceptance criteria:
 
 ## 6.6 Example Multi-Node ControlPlan (Public Demo)
 
-Create example plan under `examples/arxiv_digest_plan.yaml`:
+- [X] Create example plan under `examples/arxiv_digest_plan.yaml`:
 
 Nodes:
 1) fetch_and_snapshot (arxiv.research, mode=live)
@@ -504,12 +504,12 @@ Acceptance criteria:
 
 ## 6.7 Tests
 
-- [ ] Unit tests:
+- [X] Unit tests:
   - AgentSpec validation
   - Snapshot replay produces identical digest
   - Citation validation rejects invalid references
   - Deterministic ordering of papers
-- [ ] Integration test:
+- [X] Integration test:
   - Run in replay mode using fixed snapshot artifact
   - Compare digest.json to expected fixture
 
@@ -524,7 +524,7 @@ Acceptance criteria:
 - Clear, minimal code.
 - No hard-coded secrets.
 - LLM provider mocked in tests.
-- Example README under `agents/arxiv_research/README.md` explaining:
+- [X] Example README under `agents/arxiv_research/README.md` explaining:
   - determinism boundary
   - replay mode
   - how to extend agent
@@ -554,3 +554,145 @@ Acceptance criteria:
 - All tests pass on Unix/macOS.
 - Clear ADRs document determinism boundaries, event replay/versioning, and policy semantics.
 - Phase 6 deliverables are explicitly out of scope for V1 release.
+
+---
+
+## Stage 2 — Production CLI + Orchestrator Activation (Post-Phase-6)
+
+Goal:
+Enable true production use of `agentforge dispatch/status/resume` and execute the public `arxiv.research` agent through the control-plane scheduler + runtime adapters end-to-end.
+
+### Phase 7 — Control Runtime Execution Loop
+
+- [X] 7.1 Build control-plane run executor:
+  - load `ControlPlan` + `AgentRegistry` for a run
+  - construct `ExecutionRequest` per ready node
+  - execute via `RuntimeAdapter` selection from `AgentSpec.runtime`
+  - consume `ExecutionResult` and persist node state transitions
+- [X] 7.2 Artifact registration bridge:
+  - register node outputs in `manifest.json` as `ArtifactRef`
+  - enforce unique artifact names and path validation via existing manifest utilities
+  - ensure downstream nodes read inputs strictly from manifest refs
+- [X] 7.3 Node lifecycle events:
+  - append `NODE_READY`, `NODE_STARTED`, `NODE_SUCCEEDED`, `NODE_FAILED`
+  - include retry attempt metadata when retrying transient failures
+  - persist final `control/snapshot.json` at terminal state
+
+Acceptance criteria:
+- A control-plan run executes nodes through scheduler decisions until terminal state.
+- Manifest and control event log remain consistent and replayable.
+
+---
+
+### Phase 8 — Agent Plugin Architecture (8a/8b/8c)
+
+- [X] 8a.1 Define plugin execution contract (typed + stable):
+  - canonical plugin entrypoint signature:
+    - `run(request: ExecutionRequest) -> ExecutionResult`
+  - operation dispatch strictly by `request.operation`
+  - plugin I/O strictly through manifest-indexed artifacts (no direct coupling)
+- [X] 8a.2 Extend/confirm `AgentSpec` plugin metadata fields:
+  - `runtime.type` (v1: `python_subprocess`; future: `container`)
+  - runtime entrypoint reference for Python plugins
+  - operation capability metadata (`capabilities.operations`) with expected input/output artifact names
+- [X] 8a.3 Registry/plugin validation:
+  - validate plugin metadata completeness at load time
+  - validate declared operation names are unique and non-empty
+  - fail fast with explicit schema/contract errors
+
+- [X] 8b.1 Implement ArXiv as a plugin at `agents/arxiv_research/entrypoint.py`:
+  - expose canonical `run(request)` entrypoint
+  - route operations:
+    - `fetch_and_snapshot`
+    - `synthesize_digest`
+    - `render_report`
+    - optional `local_write_delivery` stub (explicitly optional)
+- [X] 8b.2 Bridge operation outputs to `ExecutionResult`:
+  - map operation outputs to `produced_artifacts` with validated relative `outputs/...` paths
+  - preserve explicit metrics/error fields
+  - do not register partial outputs on failed operations (unless explicitly documented)
+- [X] 8b.3 Determinism and input checks:
+  - validate required input artifacts from manifest before execution
+  - preserve replay-mode deterministic behavior contract
+  - surface explicit failure messages (no silent fallback)
+
+- [X] 8c.1 Introduce runtime adapter seam for future container plugins:
+  - keep control-plane execution path runtime-agnostic via `RuntimeAdapter` selection
+  - define container runtime contract surface in spec/docs (image/command/env/io contract)
+  - if container runtime is not implemented in V1, return explicit unsupported-runtime errors
+- [X] 8c.2 Multi-language plugin interoperability contract:
+  - define normalized request/response JSON contract for non-Python plugins
+  - require artifact paths and metrics/error fields to match `ExecutionResult` invariants
+  - ensure Unix/macOS-only path and policy constraints remain enforced by adapters
+- [X] 8c.3 Tests:
+  - unit tests for plugin metadata/registry validation
+  - unit tests for ArXiv entrypoint operation routing + failure mapping
+  - regression test that unsupported runtime types fail explicitly and safely
+
+Acceptance criteria:
+- Adding a new private agent plugin requires only:
+  - agent folder/submodule with `agent.yaml` + runtime entrypoint implementation
+  - no orchestrator/control-plane code changes for standard operation routing
+- `arxiv.research` executes through the plugin contract via `PythonRuntimeAdapter`.
+- Runtime adapter seam is ready for containerized and multi-language plugins without architecture changes.
+
+---
+
+### Phase 9 — Real CLI Dispatch Command
+
+- [X] 9.1 Implement `agentforge dispatch --agent <agent_id> --request <request.json>`:
+  - create run directory and initialize manifest/control artifacts
+  - persist request payload artifact (`request_json`) and trigger metadata
+  - materialize an initial `ControlPlan` for the selected agent
+- [X] 9.2 Plan generation modes:
+  - default single-agent/single-plan dispatch path
+  - support loading a plan file override (e.g., `examples/arxiv_digest_plan.yaml`) when provided
+  - validate agent existence in registry before run start
+- [X] 9.3 Terminal output and exit codes:
+  - print run_id on success
+  - non-recoverable execution errors return exit code 1
+  - internal/runtime failures return exit code 2 with concise error
+
+Acceptance criteria:
+- `dispatch` launches real execution (not placeholder) and produces run outputs.
+- Resulting run contains manifest + control artifacts + node outputs.
+
+---
+
+### Phase 10 — CLI Status and Resume
+
+- [X] 10.1 Implement `agentforge status --run_id <id>`:
+  - read control snapshot/events/manifest for the run
+  - display run terminal/non-terminal status
+  - summarize node states and latest event id
+- [X] 10.2 Implement `agentforge resume --run_id <id>`:
+  - reload persisted control state and continue schedulable work
+  - respect existing retry policy counters/state
+  - avoid re-running already-succeeded nodes
+- [X] 10.3 Consistency safeguards:
+  - reject resume when run is already terminal
+  - clear error messages for missing/invalid run ids
+  - keep event log append-only across resume calls
+
+Acceptance criteria:
+- Paused/partial runs can be resumed deterministically.
+- Status accurately reflects control-plane state at any point.
+
+---
+
+### Phase 11 — Production Smoke + Integration Tests
+
+- [X] 11.1 CLI integration test:
+  - run `dispatch` on `arxiv.research` in replay mode using fixed snapshots
+  - assert `digest.json`, `report.md`, `sources.json` are produced
+  - assert `request_json` artifact and control artifacts exist
+- [X] 11.2 Resume integration test:
+  - simulate interrupted run and resume
+  - verify no duplicate artifacts and correct terminal state
+- [X] 11.3 Status integration test:
+  - verify status output for running, failed, and succeeded runs
+  - verify event/snapshot consistency with manifest step outcomes
+
+Acceptance criteria:
+- End-to-end CLI workflow (`dispatch -> status -> resume`) is production-usable.
+- Tests prove deterministic replay path with no network access.

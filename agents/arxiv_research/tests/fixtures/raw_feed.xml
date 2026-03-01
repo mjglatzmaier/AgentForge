@@ -1,0 +1,18 @@
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002v1</id>
+    <title>Paper Two</title>
+    <summary>Second summary.</summary>
+    <published>2026-01-02T00:00:00Z</published>
+    <author><name>Bob</name></author>
+    <category term="cs.LG" />
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001v1</id>
+    <title>Paper One</title>
+    <summary>First summary.</summary>
+    <published>2026-01-01T00:00:00Z</published>
+    <author><name>Alice</name></author>
+    <category term="cs.AI" />
+  </entry>
+</feed>
