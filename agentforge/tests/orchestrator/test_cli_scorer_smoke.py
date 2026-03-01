@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,34 +12,32 @@ from agentforge.providers import LlmResult
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import load_manifest, register_artifact, save_manifest
 from agents.arxiv_research import synthesis
-from agents.arxiv_research.models import DigestBullet, ResearchDigest, ResearchPaper
+from agents.arxiv_research.models import DigestBullet, SynthesisHighlights
 
 
 class _ProviderFromPrompt:
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         prompt = str(kwargs.get("prompt", ""))
-        marker = "Input papers JSON:\n"
+        marker = "Input compressed papers JSON:\n"
         papers_payload: list[dict[str, Any]] = []
         if marker in prompt:
             papers_payload = json.loads(prompt.split(marker, maxsplit=1)[1])
-        papers = [ResearchPaper.model_validate(item) for item in papers_payload]
         highlights: list[DigestBullet] = []
-        if papers:
+        if papers_payload:
+            paper_id = str(papers_payload[0]["paper_id"])
             highlights = [
                 DigestBullet(
                     text="Scorer smoke highlight",
-                    cited_paper_ids=[papers[0].paper_id],
+                    cited_paper_ids=[paper_id],
                 )
             ]
-        digest = ResearchDigest(
+        payload = SynthesisHighlights(
             query="scorer-smoke",
-            generated_at_utc=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            papers=papers,
             highlights=highlights,
         )
         return LlmResult(
-            parsed=digest,
-            raw_text=digest.model_dump_json(),
+            parsed=payload,
+            raw_text=payload.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )
@@ -189,6 +186,11 @@ nodes:
       config:
         mode: replay
         provider: openai
+        max_output_tokens: 200
+        max_highlights: 2
+        abstract_snippet_chars: 140
+        max_input_tokens_est: 350
+        reserved_output_tokens: 0
 
   - node_id: render_report
     agent_id: arxiv.research
@@ -330,6 +332,14 @@ def test_cli_scorer_dispatch_and_status_are_deterministic_and_artifact_safe(
     status_payload = json.loads(capsys.readouterr().out.strip())
     assert status_payload["status"] == "terminal"
     assert status_payload["node_summary"] == {"succeeded": 4}
+    synth_diag_a = json.loads(
+        (
+            run_dir_a / "steps" / "02_synthesize_digest" / "outputs" / "synthesis_diagnostics.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert synth_diag_a["status"] == "success"
+    assert synth_diag_a["est_prompt_tokens"] <= 350
+    assert synth_diag_a["retry_outcome"] in {"not_needed", "recovered"}
 
 
 def test_cli_scorer_resume_completes_interrupted_run(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
@@ -358,3 +368,10 @@ def test_cli_scorer_resume_completes_interrupted_run(tmp_path: Path, monkeypatch
     names = [artifact["name"] for artifact in manifest_payload["artifacts"]]
     assert len(names) == len(set(names))
     assert {"papers_selected", "scoring_diagnostics", "digest_json", "report_md"} <= set(names)
+    synth_diag = json.loads(
+        (
+            run_dir / "steps" / "02_synthesize_digest" / "outputs" / "synthesis_diagnostics.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert synth_diag["status"] == "success"
+    assert synth_diag["est_prompt_tokens"] <= 350

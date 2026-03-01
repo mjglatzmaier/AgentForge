@@ -5,6 +5,7 @@ from agents.arxiv_research.models import (
     ResearchDigest,
     ResearchPaper,
     ResearchRequest,
+    SynthesisHighlights,
     parse_research_digest,
 )
 from agents.arxiv_research.ingest import fetch_and_snapshot
@@ -17,6 +18,7 @@ __all__ = [
     "ResearchDigest",
     "ResearchPaper",
     "ResearchRequest",
+    "SynthesisHighlights",
     "fetch_and_snapshot",
     "run",
     "render_report",

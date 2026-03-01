@@ -10,6 +10,7 @@ from agents.arxiv_research.models import (
     ResearchDigest,
     ResearchPaper,
     ResearchRequest,
+    SynthesisHighlights,
     parse_research_digest,
 )
 
@@ -82,3 +83,17 @@ def test_parse_research_digest_enforces_output_contract_at_runtime() -> None:
                 "highlights": [],
             }
         )
+
+
+def test_synthesis_highlights_model_accepts_query_and_highlights() -> None:
+    highlights = SynthesisHighlights(
+        query="agent systems",
+        highlights=[DigestBullet(text="Key finding", cited_paper_ids=["1234.5678"])],
+    )
+    assert highlights.query == "agent systems"
+    assert highlights.highlights[0].cited_paper_ids == ["1234.5678"]
+
+
+def test_synthesis_highlights_rejects_blank_query_when_provided() -> None:
+    with pytest.raises(ValidationError, match="query must be non-empty when provided"):
+        SynthesisHighlights(query="   ", highlights=[])
