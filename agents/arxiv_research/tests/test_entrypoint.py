@@ -14,6 +14,7 @@ def _request(
     *,
     tmp_path: Path,
     operation: str,
+    mode: str = "replay",
     inputs: list[str] | None = None,
     input_artifacts: dict[str, Any] | None = None,
 ) -> ExecutionRequest:
@@ -28,7 +29,7 @@ def _request(
         metadata={
             "run_dir": str(tmp_path),
             "step_dir": str(tmp_path / "steps" / "00_node-1"),
-            "config": {"mode": "replay"},
+            "config": {"mode": mode},
             "input_artifacts": dict(input_artifacts or {}),
         },
     )
@@ -59,7 +60,7 @@ def test_run_dispatches_fetch_and_snapshot(tmp_path: Path, monkeypatch: pytest.M
         }
 
     monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
-    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot", mode="live")
 
     result = entrypoint.run(request)
 
@@ -164,7 +165,7 @@ def test_run_returns_failed_without_partial_outputs_when_operation_errors(
         raise RuntimeError("boom")
 
     monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
-    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot", mode="live")
 
     result = entrypoint.run(request)
 
@@ -181,13 +182,51 @@ def test_run_rejects_non_outputs_relative_paths(tmp_path: Path, monkeypatch: pyt
         }
 
     monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
-    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot", mode="live")
 
     result = entrypoint.run(request)
 
     assert result.status is ExecutionStatus.FAILED
     assert result.error is not None
     assert "must start with 'outputs/'" in result.error
+
+
+def test_run_validates_required_inputs_for_operation(tmp_path: Path) -> None:
+    request = _request(tmp_path=tmp_path, operation="synthesize_digest", mode="replay")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "requires manifest input artifact" in result.error
+
+
+def test_run_requires_snapshot_inputs_for_fetch_replay_before_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        entrypoint,
+        "fetch_and_snapshot",
+        lambda _ctx: (_ for _ in ()).throw(AssertionError("should not execute")),
+    )
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot", mode="replay")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "raw_feed_xml" in result.error
+    assert "papers_raw" in result.error
+
+
+def test_run_rejects_unsupported_mode_with_explicit_error(tmp_path: Path) -> None:
+    request = _request(tmp_path=tmp_path, operation="synthesize_digest", mode="sandbox")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "Unsupported mode" in result.error
 
 
 def _render_stub(ctx: dict[str, Any]) -> dict[str, Any]:

@@ -19,6 +19,7 @@ _WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
 def run(request: ExecutionRequest) -> ExecutionResult:
     try:
+        _validate_operation_contract(request)
         return dispatch_plugin_operation(
             request,
             operations={
@@ -202,3 +203,32 @@ def _required_metadata_str(request: ExecutionRequest, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"ExecutionRequest metadata.{key} must be a non-empty string.")
     return value.strip()
+
+
+def _validate_operation_contract(request: ExecutionRequest) -> None:
+    operation = request.operation.strip()
+    mode = _mode_from_request(request)
+
+    required_inputs: set[str] = set()
+    if operation == "synthesize_digest":
+        required_inputs = {"papers_raw"}
+    elif operation == "render_report":
+        required_inputs = {"digest_json"}
+    elif operation == "fetch_and_snapshot" and mode == "replay":
+        required_inputs = {"raw_feed_xml", "papers_raw"}
+
+    missing = sorted(required_inputs - set(request.inputs))
+    if missing:
+        raise ValueError(
+            f"Operation '{operation}' requires manifest input artifact(s): {missing}."
+        )
+
+
+def _mode_from_request(request: ExecutionRequest) -> str:
+    config = request.metadata.get("config", {})
+    if not isinstance(config, dict):
+        raise TypeError("ExecutionRequest metadata.config must be a mapping when provided.")
+    mode = str(config.get("mode", "live")).strip().lower()
+    if mode not in {"live", "replay"}:
+        raise ValueError(f"Unsupported mode for arxiv plugin operation '{request.operation}': {mode}")
+    return mode

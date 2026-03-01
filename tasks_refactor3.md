@@ -611,7 +611,7 @@ Acceptance criteria:
   - map operation outputs to `produced_artifacts` with validated relative `outputs/...` paths
   - preserve explicit metrics/error fields
   - do not register partial outputs on failed operations (unless explicitly documented)
-- [ ] 8b.3 Determinism and input checks:
+- [X] 8b.3 Determinism and input checks:
   - validate required input artifacts from manifest before execution
   - preserve replay-mode deterministic behavior contract
   - surface explicit failure messages (no silent fallback)
