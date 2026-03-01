@@ -386,7 +386,7 @@ def test_phase11_status_reports_running_failed_and_succeeded_with_consistent_art
     succeeded_payload = json.loads(capsys.readouterr().out.strip())
     assert succeeded_payload["status"] == "terminal"
     assert succeeded_payload["node_summary"] == {"succeeded": 3}
-    assert succeeded_payload["artifact_count"] == 5
+    assert succeeded_payload["artifact_count"] == 6
     succeeded_snapshot = json.loads((tmp_path / "runs" / succeeded_run_id / "control" / "snapshot.json").read_text(encoding="utf-8"))
     assert succeeded_payload["node_states"] == succeeded_snapshot["node_states"]
     succeeded_manifest = json.loads((tmp_path / "runs" / succeeded_run_id / "manifest.json").read_text(encoding="utf-8"))

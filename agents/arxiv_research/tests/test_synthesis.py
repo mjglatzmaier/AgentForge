@@ -48,6 +48,14 @@ class _ProviderStub:
         )
 
 
+class _FailingProviderStub:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+        raise self.error
+
+
 def test_synthesize_digest_prefers_selected_input_when_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -147,9 +155,18 @@ def test_synthesize_digest_uses_provider_and_writes_output(
         }
     )
 
-    assert [item["name"] for item in result["outputs"]] == ["digest_json"]
+    assert [item["name"] for item in result["outputs"]] == ["digest_json", "synthesis_diagnostics"]
     output_payload = json.loads((tmp_path / "outputs" / "digest.json").read_text(encoding="utf-8"))
     assert output_payload["highlights"][0]["cited_paper_ids"] == ["2401.00001v1"]
+    diagnostics_payload = json.loads(
+        (tmp_path / "outputs" / "synthesis_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert diagnostics_payload["status"] == "success"
+    assert diagnostics_payload["overflow_detected"] is False
+    assert diagnostics_payload["finish_reason"] is None
+    assert diagnostics_payload["error"] is None
+    assert diagnostics_payload["prompt_chars"] > 0
+    assert diagnostics_payload["est_prompt_tokens"] > 0
     assert provider.calls
     call = provider.calls[0]
     assert call["response_model"] is ResearchDigest
@@ -230,6 +247,35 @@ def test_synthesize_digest_replay_mode_uses_deterministic_settings(
     assert call["model"] == "gpt-4o-mini"
     assert call["temperature"] == 0.0
     assert call["seed"] == 0
+
+
+def test_synthesize_digest_writes_failure_diagnostics_on_provider_validation_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    error = ProviderValidationError(
+        "openai response failed schema validation; raw excerpt: {\"highlights\": [}. "
+        "finish_reason=length. tail_excerpt={\"highlights\": [}"
+    )
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _FailingProviderStub(error))
+
+    with pytest.raises(ProviderValidationError, match="finish_reason=length"):
+        synthesis.synthesize_digest(
+            {
+                "step_dir": str(tmp_path),
+                "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+                "config": {"mode": "live"},
+            }
+        )
+
+    diagnostics_payload = json.loads(
+        (tmp_path / "outputs" / "synthesis_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert diagnostics_payload["status"] == "failed"
+    assert diagnostics_payload["finish_reason"] == "length"
+    assert diagnostics_payload["overflow_detected"] is True
+    assert "finish_reason=length" in diagnostics_payload["error"]
 
 
 def test_replay_mode_produces_identical_digest_for_same_snapshot_inputs(

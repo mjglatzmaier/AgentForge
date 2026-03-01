@@ -111,9 +111,9 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 ## File-Level Implementation Plan
 
 ### Phase O0 — Baseline Diagnostics
-- [ ] O0.1 Add `synthesis_diagnostics.json` output from `synthesize_digest`.
-- [ ] O0.2 Ensure OpenAI truncation metadata is captured into diagnostics (currently available via exception text).
-- [ ] O0.3 Add tests asserting diagnostics artifact presence on success/failure paths.
+- [X] O0.1 Add `synthesis_diagnostics.json` output from `synthesize_digest`.
+- [X] O0.2 Ensure OpenAI truncation metadata is captured into diagnostics (currently available via exception text).
+- [X] O0.3 Add tests asserting diagnostics artifact presence on success/failure paths.
 
 ### Phase O1 — Compact Output Contract
 - [ ] O1.1 Add `SynthesisHighlights` model (agent-local).

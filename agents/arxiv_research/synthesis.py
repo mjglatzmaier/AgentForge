@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ _SYSTEM_PROMPT = (
 _DEFAULT_MODEL = "gpt-4o-mini"
 _DEFAULT_TIMEOUT_S = 60.0
 _DEFAULT_MAX_OUTPUT_TOKENS = 2000
+_FINISH_REASON_RE = re.compile(r"finish_reason=([A-Za-z0-9_-]+|None|null)")
 
 
 def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -27,36 +29,60 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
     provider = _resolve_provider(ctx)
-
-    result: LlmResult[ResearchDigest] = provider.generate_json(
-        prompt=prompt,
-        response_model=ResearchDigest,
-        system_prompt=_SYSTEM_PROMPT,
-        model=settings["model"],
-        temperature=settings["temperature"],
-        max_output_tokens=settings["max_output_tokens"],
-        seed=settings["seed"],
-        timeout_s=settings["timeout_s"],
-        metadata={
-            "run_id": str(ctx.get("run_id", "")),
-            "step_id": str(ctx.get("step_id", "synthesize_digest")),
-            "mode": settings["mode"],
-        },
-    )
-
-    digest = result.parsed
-    _validate_citations(digest=digest, papers=papers)
-
     step_dir = Path(ctx["step_dir"])
     outputs_dir = step_dir / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics = _base_synthesis_diagnostics(
+        mode=str(settings["mode"]),
+        provider_name=str(getattr(provider, "name", "unknown")),
+        model=str(settings["model"]),
+        prompt=prompt,
+    )
+
+    try:
+        result: LlmResult[ResearchDigest] = provider.generate_json(
+            prompt=prompt,
+            response_model=ResearchDigest,
+            system_prompt=_SYSTEM_PROMPT,
+            model=settings["model"],
+            temperature=settings["temperature"],
+            max_output_tokens=settings["max_output_tokens"],
+            seed=settings["seed"],
+            timeout_s=settings["timeout_s"],
+            metadata={
+                "run_id": str(ctx.get("run_id", "")),
+                "step_id": str(ctx.get("step_id", "synthesize_digest")),
+                "mode": settings["mode"],
+            },
+        )
+
+        digest = result.parsed
+        _validate_citations(digest=digest, papers=papers)
+    except ProviderValidationError as exc:
+        _record_failure_diagnostics(diagnostics=diagnostics, error_text=str(exc))
+        _write_json(outputs_dir / "synthesis_diagnostics.json", diagnostics)
+        raise
+
+    diagnostics["status"] = "success"
+    diagnostics["provider"] = result.provider
+    diagnostics["model"] = result.model
+    diagnostics["latency_ms"] = result.latency_ms
+    diagnostics["usage"] = dict(result.usage)
     (outputs_dir / "digest.json").write_text(
         json.dumps(digest.model_dump(mode="json"), indent=2),
         encoding="utf-8",
     )
+    _write_json(outputs_dir / "synthesis_diagnostics.json", diagnostics)
 
     return {
-        "outputs": [{"name": "digest_json", "type": "json", "path": "outputs/digest.json"}],
+        "outputs": [
+            {"name": "digest_json", "type": "json", "path": "outputs/digest.json"},
+            {
+                "name": "synthesis_diagnostics",
+                "type": "json",
+                "path": "outputs/synthesis_diagnostics.json",
+            },
+        ],
         "metrics": {
             "papers": len(papers),
             "highlights": len(digest.highlights),
@@ -167,3 +193,58 @@ def _validate_citations(*, digest: ResearchDigest, papers: list[ResearchPaper]) 
 
     if invalid_entries:
         raise ProviderValidationError("Invalid highlight citations: " + "; ".join(invalid_entries))
+
+
+def _base_synthesis_diagnostics(
+    *,
+    mode: str,
+    provider_name: str,
+    model: str,
+    prompt: str,
+) -> dict[str, Any]:
+    prompt_chars = len(prompt)
+    return {
+        "status": "pending",
+        "mode": mode,
+        "provider": provider_name,
+        "model": model,
+        "prompt_chars": prompt_chars,
+        "est_prompt_tokens": _estimate_tokens_from_chars(prompt_chars),
+        "retry_count": 0,
+        "finish_reason": None,
+        "overflow_detected": False,
+        "error": None,
+    }
+
+
+def _record_failure_diagnostics(*, diagnostics: dict[str, Any], error_text: str) -> None:
+    finish_reason = _extract_finish_reason(error_text)
+    diagnostics["status"] = "failed"
+    diagnostics["finish_reason"] = finish_reason
+    diagnostics["overflow_detected"] = _is_overflow_error(error_text=error_text, finish_reason=finish_reason)
+    diagnostics["error"] = error_text
+
+
+def _extract_finish_reason(error_text: str) -> str | None:
+    match = _FINISH_REASON_RE.search(error_text)
+    if match is None:
+        return None
+    value = match.group(1).strip().strip(".")
+    if value.lower() in {"none", "null"}:
+        return None
+    return value
+
+
+def _is_overflow_error(*, error_text: str, finish_reason: str | None) -> bool:
+    if finish_reason == "length":
+        return True
+    lowered = error_text.lower()
+    return "truncat" in lowered or "max_tokens" in lowered
+
+
+def _estimate_tokens_from_chars(char_count: int) -> int:
+    return (char_count + 3) // 4
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -93,8 +93,8 @@ You are working in the AgentForge repository.
 Use model: GP-5.3-Codex.
 
 Task:
-Complete EXACTLY the following task ID: [Phase S7 (7.1, 7.2, 7.3, 7.4)]
-Source of truth file: tasks_doc_scorer2.md (use what the task references).
+Complete EXACTLY the following task ID: [Phase 1 (0.1, 0.2, 0.3, 0.4)]
+Source of truth file: token_overflow_plan3.md (use what the task references).
 Do NOT implement anything beyond this task.
 
 Constraints (must follow):
@@ -112,7 +112,7 @@ Implementation rules:
 3) Add/extend tests under the relevant tests folders.
 4) Run: `python -m pytest`
 5) If tests fail, fix them. Do not stop until tests pass.
-6) Edit tasks_refactor3.md with an [X] next to each completed work item.
+6) Edit token_overflow_plan3.md with an [X] next to each completed work item.
 
 Deliverables in your final response:
 A) Summary of what changed (bullet list).
@@ -122,4 +122,4 @@ D) Suggested Conventional Commit message (title + body).
 E) Exact checkbox lines (copy/paste) that should be marked complete in the source task file.
 F) Whether docs/architecture.md or .github/copilot-instructions.md require updates (yes/no + why).
 
-Now implement [Phase S7 (7.1, 7.2, 7.3, 7.4)].
+Now implement [Phase 1 (0.1, 0.2, 0.3, 0.4)].
