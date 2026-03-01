@@ -9,6 +9,7 @@ from typing import Any, Callable
 import subprocess
 import platform
 from pathlib import Path, PurePosixPath
+import json
 
 from agentforge.contracts.models import (
     ArtifactRef,
@@ -17,6 +18,8 @@ from agentforge.contracts.models import (
     ExecutionStatus,
     NetworkAccess,
     OperationsPolicy,
+    RuntimeInteropRequest,
+    RuntimeInteropResponse,
     TerminalAccess,
 )
 
@@ -74,26 +77,44 @@ class CommandRuntimeAdapter(RuntimeAdapter):
             _enforce_policy(request, command=command)
             cwd = request.metadata.get("cwd")
             cwd_path = str(cwd).strip() if isinstance(cwd, str) and cwd.strip() else None
+            io_contract = _command_io_contract(request)
+            command_input = None
+            if io_contract == "json-stdio":
+                command_input = RuntimeInteropRequest(request=request).model_dump_json()
             completed = subprocess.run(
                 command,
                 cwd=cwd_path,
                 capture_output=True,
                 text=True,
+                input=command_input,
                 timeout=request.timeout_s,
                 check=False,
             )
-            status = (
-                ExecutionStatus.SUCCESS if completed.returncode == 0 else ExecutionStatus.FAILED
-            )
-            error_excerpt = None
-            if status is ExecutionStatus.FAILED:
+            if completed.returncode != 0:
                 error_excerpt = (completed.stderr or completed.stdout).strip()[:500] or (
                     f"Command exited with returncode={completed.returncode}"
                 )
+                return ExecutionResult(
+                    status=ExecutionStatus.FAILED,
+                    metrics={"returncode": completed.returncode},
+                    error=error_excerpt,
+                    latency_ms=int((perf_counter() - started) * 1000),
+                    adapter=self.name,
+                    adapter_version=self.version,
+                )
+            if io_contract == "json-stdio":
+                result = _parse_command_interop_response(
+                    completed.stdout,
+                    adapter=self.name,
+                    version=self.version,
+                )
+                result = _normalize_result_artifact_paths(result)
+                if result.latency_ms is None:
+                    result.latency_ms = int((perf_counter() - started) * 1000)
+                return result
             return ExecutionResult(
-                status=status,
+                status=ExecutionStatus.SUCCESS,
                 metrics={"returncode": completed.returncode},
-                error=error_excerpt,
                 latency_ms=int((perf_counter() - started) * 1000),
                 adapter=self.name,
                 adapter_version=self.version,
@@ -154,6 +175,36 @@ def _required_command(request: ExecutionRequest) -> list[str]:
             normalized.append(item.strip())
         return normalized
     raise ValueError("ExecutionRequest metadata.command must be a non-empty string or string list.")
+
+
+def _command_io_contract(request: ExecutionRequest) -> str:
+    raw = request.metadata.get("io_contract")
+    if raw is None:
+        return "exit-code-only"
+    if not isinstance(raw, str):
+        raise ValueError("ExecutionRequest metadata.io_contract must be a string when provided.")
+    normalized = raw.strip().lower()
+    allowed = {"exit-code-only", "json-stdio"}
+    if normalized not in allowed:
+        raise ValueError(
+            f"Unsupported command runtime io_contract '{normalized}'. Allowed: {sorted(allowed)}"
+        )
+    return normalized
+
+
+def _parse_command_interop_response(stdout: str, *, adapter: str, version: str) -> ExecutionResult:
+    text = stdout.strip()
+    if not text:
+        raise ValueError("Command runtime expected JSON response on stdout for io_contract='json-stdio'.")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Command runtime returned invalid JSON for io_contract='json-stdio'."
+        ) from exc
+    envelope = RuntimeInteropResponse.model_validate(payload)
+    result = envelope.result
+    return result.model_copy(update={"adapter": adapter, "adapter_version": version})
 
 
 def _resolve_entrypoint(ref: str) -> Callable[[ExecutionRequest], Any]:

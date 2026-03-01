@@ -620,7 +620,7 @@ Acceptance criteria:
   - keep control-plane execution path runtime-agnostic via `RuntimeAdapter` selection
   - define container runtime contract surface in spec/docs (image/command/env/io contract)
   - if container runtime is not implemented in V1, return explicit unsupported-runtime errors
-- [ ] 8c.2 Multi-language plugin interoperability contract:
+- [X] 8c.2 Multi-language plugin interoperability contract:
   - define normalized request/response JSON contract for non-Python plugins
   - require artifact paths and metrics/error fields to match `ExecutionResult` invariants
   - ensure Unix/macOS-only path and policy constraints remain enforced by adapters

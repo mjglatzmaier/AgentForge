@@ -457,6 +457,34 @@ class ExecutionResult(BaseModel):
         return value
 
 
+class RuntimeInteropRequest(BaseModel):
+    """Normalized JSON contract for non-Python runtime requests."""
+
+    schema_version: int = 1
+    request: ExecutionRequest
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Unsupported RuntimeInteropRequest schema_version.")
+        return value
+
+
+class RuntimeInteropResponse(BaseModel):
+    """Normalized JSON contract for non-Python runtime responses."""
+
+    schema_version: int = 1
+    result: ExecutionResult
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("Unsupported RuntimeInteropResponse schema_version.")
+        return value
+
+
 class ControlNode(BaseModel):
     """Control-plane node contract for execution planning."""
 
