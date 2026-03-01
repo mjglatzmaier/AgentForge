@@ -280,18 +280,18 @@ Acceptance criteria:
 
 ## Phase 4 — Scheduler v1 (Dependencies + Parallelism + Artifact Handoff)
 
-- [ ] 4.1 Implement scheduler:
+- [X] 4.1 Implement scheduler:
   - nodes become ready when dependencies succeeded
   - execute up to ControlPlan.max_parallel
   - enforce per-agent max_concurrency
   - deterministic tie-break for ready nodes (node_id)
-- [ ] 4.2 Artifact handoff:
+- [X] 4.2 Artifact handoff:
   - downstream reads inputs strictly by manifest refs
   - ingest steps must write snapshot artifacts (determinism boundary)
-- [ ] 4.3 Failure semantics:
+- [X] 4.3 Failure semantics:
   - node failure blocks downstream unless retry policy allows
   - transient retries only when declared; never infinite
-- [ ] 4.4 Control-plane persistence:
+- [X] 4.4 Control-plane persistence:
   - write events for node transitions
   - persist final control snapshot
 
@@ -303,16 +303,16 @@ Acceptance criteria:
 
 ## Phase 5 — CLI + Scheduled/Event Trigger Support
 
-- [ ] 5.1 CLI entrypoints:
+- [X] 5.1 CLI entrypoints:
   - `agentforge run <pipeline.yaml>` (existing runner path)
   - `agentforge dispatch --agent <agent_id> --request <request.json>`
   - `agentforge resume --run_id <id>`
   - `agentforge status --run_id <id>`
-- [ ] 5.2 Triggers:
+- [X] 5.2 Triggers:
   - `TriggerSpec.kind=manual` for CLI runs
   - `TriggerSpec.kind=schedule` for cron-driven runs (OS cron calls CLI)
   - `TriggerSpec.kind=event` for webhook/manual event triggers
-- [ ] 5.3 Ensure request payload is stored as an input artifact for reproducibility.
+- [X] 5.3 Ensure request payload is stored as an input artifact for reproducibility.
 
 Acceptance criteria:
 - V1 supports ad-hoc and scheduled/event-triggered batch runs.
