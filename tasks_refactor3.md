@@ -397,25 +397,25 @@ Acceptance criteria:
 
 ## 6.2 Define Input / Output Schemas
 
-- [ ] 6.2.1 Implement `ResearchRequest`:
+- [X] 6.2.1 Implement `ResearchRequest`:
   - query: str
   - max_results: int
   - categories: list[str] | None
   - sort_by: "relevance" | "lastUpdatedDate"
   - mode: "live" | "replay"
-- [ ] 6.2.2 Implement `ResearchPaper`:
+- [X] 6.2.2 Implement `ResearchPaper`:
   - paper_id
   - title
   - authors
   - abstract
   - categories
   - published
-- [ ] 6.2.3 Implement `ResearchDigest`:
+- [X] 6.2.3 Implement `ResearchDigest`:
   - query
   - generated_at_utc
   - papers: list[ResearchPaper]
   - highlights: list[DigestBullet]
-- [ ] 6.2.4 `DigestBullet`:
+- [X] 6.2.4 `DigestBullet`:
   - text
   - cited_paper_ids: list[str]
 
