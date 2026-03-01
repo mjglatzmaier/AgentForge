@@ -30,6 +30,7 @@ capabilities:
         - papers_raw
       outputs:
         - digest_json
+        - synthesis_diagnostics
     - name: score_papers
       inputs:
         - papers_raw

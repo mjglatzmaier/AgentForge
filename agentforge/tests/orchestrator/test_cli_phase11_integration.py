@@ -13,17 +13,17 @@ from agentforge.providers import LlmResult
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import load_manifest, register_artifact, save_manifest
 from agents.arxiv_research import ingest, synthesis
-from agents.arxiv_research.models import ResearchDigest
+from agents.arxiv_research.models import ResearchDigest, SynthesisHighlights
 
 
 class _ProviderStub:
     def __init__(self, digest: ResearchDigest) -> None:
-        self._digest = digest
+        self._highlights = SynthesisHighlights(query=digest.query, highlights=digest.highlights)
 
-    def generate_json(self, **kwargs: Any) -> LlmResult[ResearchDigest]:
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         return LlmResult(
-            parsed=self._digest,
-            raw_text=self._digest.model_dump_json(),
+            parsed=self._highlights,
+            raw_text=self._highlights.model_dump_json(),
             provider="stub",
             model=str(kwargs.get("model", "stub-model")),
         )
@@ -386,7 +386,7 @@ def test_phase11_status_reports_running_failed_and_succeeded_with_consistent_art
     succeeded_payload = json.loads(capsys.readouterr().out.strip())
     assert succeeded_payload["status"] == "terminal"
     assert succeeded_payload["node_summary"] == {"succeeded": 3}
-    assert succeeded_payload["artifact_count"] == 5
+    assert succeeded_payload["artifact_count"] == 6
     succeeded_snapshot = json.loads((tmp_path / "runs" / succeeded_run_id / "control" / "snapshot.json").read_text(encoding="utf-8"))
     assert succeeded_payload["node_states"] == succeeded_snapshot["node_states"]
     succeeded_manifest = json.loads((tmp_path / "runs" / succeeded_run_id / "manifest.json").read_text(encoding="utf-8"))

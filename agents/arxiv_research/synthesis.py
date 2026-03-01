@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,7 @@ from agentforge.providers import (
     OpenAIProvider,
     ProviderValidationError,
 )
-from agents.arxiv_research.models import ResearchDigest, ResearchPaper
+from agents.arxiv_research.models import ResearchDigest, ResearchPaper, SynthesisHighlights
 
 _SYSTEM_PROMPT = (
     "You are a research synthesis assistant. "
@@ -20,43 +22,111 @@ _SYSTEM_PROMPT = (
 _DEFAULT_MODEL = "gpt-4o-mini"
 _DEFAULT_TIMEOUT_S = 60.0
 _DEFAULT_MAX_OUTPUT_TOKENS = 2000
+_DEFAULT_TITLE_MAX_CHARS = 180
+_DEFAULT_ABSTRACT_SNIPPET_CHARS = 600
+_FINISH_REASON_RE = re.compile(r"finish_reason=([A-Za-z0-9_-]+|None|null)")
 
 
 def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     papers = _load_synthesis_papers(ctx)
-    prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
-    provider = _resolve_provider(ctx)
-
-    result: LlmResult[ResearchDigest] = provider.generate_json(
-        prompt=prompt,
-        response_model=ResearchDigest,
-        system_prompt=_SYSTEM_PROMPT,
-        model=settings["model"],
-        temperature=settings["temperature"],
-        max_output_tokens=settings["max_output_tokens"],
-        seed=settings["seed"],
-        timeout_s=settings["timeout_s"],
-        metadata={
-            "run_id": str(ctx.get("run_id", "")),
-            "step_id": str(ctx.get("step_id", "synthesize_digest")),
-            "mode": settings["mode"],
-        },
+    limits = _initial_prompt_limits(settings=settings, paper_count=len(papers))
+    limits, prompt = _apply_prompt_budget_limits(
+        papers=papers,
+        limits=limits,
+        max_input_tokens_est=int(settings["max_input_tokens_est"]),
+        reserved_output_tokens=int(settings["reserved_output_tokens"]),
     )
-
-    digest = result.parsed
-    _validate_citations(digest=digest, papers=papers)
-
+    provider = _resolve_provider(ctx)
     step_dir = Path(ctx["step_dir"])
     outputs_dir = step_dir / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics = _base_synthesis_diagnostics(
+        mode=str(settings["mode"]),
+        provider_name=str(getattr(provider, "name", "unknown")),
+        model=str(settings["model"]),
+        prompt=prompt,
+    )
+    diagnostics["applied_limits"] = dict(limits)
+    diagnostics["retry_outcome"] = "not_needed"
+    diagnostics["budget"] = {
+        "max_input_tokens_est": int(settings["max_input_tokens_est"]),
+        "reserved_output_tokens": int(settings["reserved_output_tokens"]),
+    }
+
+    result: LlmResult[SynthesisHighlights]
+    digest: ResearchDigest
+    retry_limit = int(settings["overflow_retry_limit"])
+    for attempt in range(retry_limit + 1):
+        diagnostics["retry_count"] = attempt
+        _update_prompt_diagnostics(diagnostics=diagnostics, prompt=prompt)
+        diagnostics["applied_limits"] = dict(limits)
+        try:
+            result = provider.generate_json(
+                prompt=prompt,
+                response_model=SynthesisHighlights,
+                system_prompt=_SYSTEM_PROMPT,
+                model=settings["model"],
+                temperature=settings["temperature"],
+                max_output_tokens=settings["max_output_tokens"],
+                seed=settings["seed"],
+                timeout_s=settings["timeout_s"],
+                metadata={
+                    "run_id": str(ctx.get("run_id", "")),
+                    "step_id": str(ctx.get("step_id", "synthesize_digest")),
+                    "mode": settings["mode"],
+                },
+            )
+
+            digest = _build_research_digest(
+                highlights_payload=result.parsed,
+                papers=papers,
+                ctx=ctx,
+                mode=str(settings["mode"]),
+            )
+            _validate_citations(digest=digest, papers=papers)
+            break
+        except ProviderValidationError as exc:
+            _record_failure_diagnostics(diagnostics=diagnostics, error_text=str(exc))
+            if diagnostics["overflow_detected"] and attempt < retry_limit:
+                limits = _tighten_limits_for_retry(limits)
+                limits, prompt = _apply_prompt_budget_limits(
+                    papers=papers,
+                    limits=limits,
+                    max_input_tokens_est=int(settings["max_input_tokens_est"]),
+                    reserved_output_tokens=int(settings["reserved_output_tokens"]),
+                )
+                continue
+            diagnostics["retry_outcome"] = (
+                "exhausted" if diagnostics["overflow_detected"] else "not_applicable"
+            )
+            _write_json(outputs_dir / "synthesis_diagnostics.json", diagnostics)
+            raise
+
+    diagnostics["status"] = "success"
+    diagnostics["retry_outcome"] = "recovered" if int(diagnostics["retry_count"]) > 0 else "not_needed"
+    diagnostics["finish_reason"] = None
+    diagnostics["overflow_detected"] = False
+    diagnostics["error"] = None
+    diagnostics["provider"] = result.provider
+    diagnostics["model"] = result.model
+    diagnostics["latency_ms"] = result.latency_ms
+    diagnostics["usage"] = dict(result.usage)
     (outputs_dir / "digest.json").write_text(
         json.dumps(digest.model_dump(mode="json"), indent=2),
         encoding="utf-8",
     )
+    _write_json(outputs_dir / "synthesis_diagnostics.json", diagnostics)
 
     return {
-        "outputs": [{"name": "digest_json", "type": "json", "path": "outputs/digest.json"}],
+        "outputs": [
+            {"name": "digest_json", "type": "json", "path": "outputs/digest.json"},
+            {
+                "name": "synthesis_diagnostics",
+                "type": "json",
+                "path": "outputs/synthesis_diagnostics.json",
+            },
+        ],
         "metrics": {
             "papers": len(papers),
             "highlights": len(digest.highlights),
@@ -65,15 +135,26 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_synthesis_prompt(papers: list[ResearchPaper]) -> str:
-    ordered = sorted(papers, key=lambda paper: (paper.published, paper.paper_id))
-    papers_payload = [paper.model_dump(mode="json") for paper in ordered]
+def _build_synthesis_prompt(
+    *,
+    papers: list[ResearchPaper],
+    title_max_chars: int,
+    abstract_snippet_chars: int,
+    max_highlights: int,
+    paper_limit: int,
+) -> str:
+    papers_payload = _compress_papers_for_prompt(
+        papers,
+        title_max_chars=title_max_chars,
+        abstract_snippet_chars=abstract_snippet_chars,
+        paper_limit=paper_limit,
+    )
     papers_json = json.dumps(papers_payload, sort_keys=True, indent=2)
     return (
         "Summarize key contributions from the provided papers.\n"
-        "Produce max of 5 concise bullet highlights for the most important findings. Max 100 words per highlight, use clear, high-level language.\n"
+        f"Produce max of {max_highlights} concise bullet highlights for the most important findings. Max 100 words per highlight, use clear, high-level language.\n"
         "Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
-        "Input papers JSON:\n"
+        "Input compressed papers JSON:\n"
         f"{papers_json}"
     )
 
@@ -87,7 +168,27 @@ def _synthesis_settings(ctx: dict[str, Any]) -> dict[str, str | float | int | No
     model = str(config.get("model", _DEFAULT_MODEL))
     timeout_s = float(config.get("timeout_s", _DEFAULT_TIMEOUT_S))
     max_output_tokens = int(config.get("max_output_tokens", _DEFAULT_MAX_OUTPUT_TOKENS))
+    title_max_chars = int(config.get("title_max_chars", _DEFAULT_TITLE_MAX_CHARS))
+    abstract_snippet_chars = int(
+        config.get("abstract_snippet_chars", _DEFAULT_ABSTRACT_SNIPPET_CHARS)
+    )
+    max_highlights = int(config.get("max_highlights", 5))
+    max_input_tokens_est = int(config.get("max_input_tokens_est", 6000))
+    reserved_output_tokens = int(config.get("reserved_output_tokens", 1200))
+    overflow_retry_limit = int(config.get("overflow_retry_limit", 1))
     raw_seed = config.get("seed")
+    if title_max_chars < 1:
+        raise ValueError("title_max_chars must be >= 1.")
+    if abstract_snippet_chars < 1:
+        raise ValueError("abstract_snippet_chars must be >= 1.")
+    if max_highlights < 1:
+        raise ValueError("max_highlights must be >= 1.")
+    if max_input_tokens_est < 1:
+        raise ValueError("max_input_tokens_est must be >= 1.")
+    if reserved_output_tokens < 0:
+        raise ValueError("reserved_output_tokens must be >= 0.")
+    if overflow_retry_limit < 0:
+        raise ValueError("overflow_retry_limit must be >= 0.")
 
     if mode == "replay":
         seed = int(raw_seed) if raw_seed is not None else 0
@@ -101,6 +202,12 @@ def _synthesis_settings(ctx: dict[str, Any]) -> dict[str, str | float | int | No
         "model": model,
         "timeout_s": timeout_s,
         "max_output_tokens": max_output_tokens,
+        "title_max_chars": title_max_chars,
+        "abstract_snippet_chars": abstract_snippet_chars,
+        "max_highlights": max_highlights,
+        "max_input_tokens_est": max_input_tokens_est,
+        "reserved_output_tokens": reserved_output_tokens,
+        "overflow_retry_limit": overflow_retry_limit,
         "seed": seed,
         "temperature": temperature,
     }
@@ -167,3 +274,214 @@ def _validate_citations(*, digest: ResearchDigest, papers: list[ResearchPaper]) 
 
     if invalid_entries:
         raise ProviderValidationError("Invalid highlight citations: " + "; ".join(invalid_entries))
+
+
+def _compress_papers_for_prompt(
+    papers: list[ResearchPaper],
+    *,
+    title_max_chars: int,
+    abstract_snippet_chars: int,
+    paper_limit: int,
+) -> list[dict[str, Any]]:
+    ordered = sorted(papers, key=lambda paper: (paper.published, paper.paper_id))[:paper_limit]
+    return [
+        {
+            "paper_id": paper.paper_id,
+            "title": _truncate_for_prompt(paper.title, title_max_chars),
+            "published": paper.published,
+            "categories": sorted(paper.categories),
+            "abstract_snippet": _truncate_for_prompt(paper.abstract, abstract_snippet_chars),
+        }
+        for paper in ordered
+    ]
+
+
+def _truncate_for_prompt(value: str, max_chars: int) -> str:
+    return value[:max_chars]
+
+
+def _initial_prompt_limits(
+    *,
+    settings: dict[str, str | float | int | None],
+    paper_count: int,
+) -> dict[str, int]:
+    return {
+        "title_max_chars": int(settings["title_max_chars"]),
+        "abstract_snippet_chars": int(settings["abstract_snippet_chars"]),
+        "max_highlights": int(settings["max_highlights"]),
+        "paper_limit": max(1, paper_count),
+    }
+
+
+def _apply_prompt_budget_limits(
+    *,
+    papers: list[ResearchPaper],
+    limits: dict[str, int],
+    max_input_tokens_est: int,
+    reserved_output_tokens: int,
+) -> tuple[dict[str, int], str]:
+    budget_tokens = max(1, max_input_tokens_est - reserved_output_tokens)
+    current = dict(limits)
+    while True:
+        prompt = _build_synthesis_prompt(
+            papers=papers,
+            title_max_chars=current["title_max_chars"],
+            abstract_snippet_chars=current["abstract_snippet_chars"],
+            max_highlights=current["max_highlights"],
+            paper_limit=current["paper_limit"],
+        )
+        if _estimate_tokens_from_chars(len(prompt)) <= budget_tokens:
+            return current, prompt
+        reduced = _reduce_limits_for_budget(current)
+        if reduced == current:
+            return current, prompt
+        current = reduced
+
+
+def _reduce_limits_for_budget(limits: dict[str, int]) -> dict[str, int]:
+    if limits["abstract_snippet_chars"] > 120:
+        return {
+            **limits,
+            "abstract_snippet_chars": max(120, limits["abstract_snippet_chars"] // 2),
+        }
+    if limits["max_highlights"] > 1:
+        return {**limits, "max_highlights": limits["max_highlights"] - 1}
+    if limits["paper_limit"] > 1:
+        return {**limits, "paper_limit": limits["paper_limit"] - 1}
+    return limits
+
+
+def _tighten_limits_for_retry(limits: dict[str, int]) -> dict[str, int]:
+    updated = dict(limits)
+    if updated["max_highlights"] > 1:
+        updated["max_highlights"] -= 1
+    if updated["abstract_snippet_chars"] > 120:
+        updated["abstract_snippet_chars"] = max(120, updated["abstract_snippet_chars"] * 3 // 4)
+    if updated == limits and updated["paper_limit"] > 1:
+        updated["paper_limit"] -= 1
+    return updated
+
+
+def _update_prompt_diagnostics(*, diagnostics: dict[str, Any], prompt: str) -> None:
+    prompt_chars = len(prompt)
+    diagnostics["prompt_chars"] = prompt_chars
+    diagnostics["est_prompt_tokens"] = _estimate_tokens_from_chars(prompt_chars)
+
+
+def _build_research_digest(
+    *,
+    highlights_payload: SynthesisHighlights,
+    papers: list[ResearchPaper],
+    ctx: dict[str, Any],
+    mode: str,
+) -> ResearchDigest:
+    return ResearchDigest(
+        query=_resolve_digest_query(highlights_payload=highlights_payload, ctx=ctx),
+        generated_at_utc=_resolve_generated_at_utc(ctx=ctx, papers=papers, mode=mode),
+        papers=[paper.model_copy(deep=True) for paper in papers],
+        highlights=[highlight.model_copy(deep=True) for highlight in highlights_payload.highlights],
+    )
+
+
+def _resolve_digest_query(*, highlights_payload: SynthesisHighlights, ctx: dict[str, Any]) -> str:
+    if highlights_payload.query is not None:
+        return highlights_payload.query
+    config = ctx.get("config", {})
+    if isinstance(config, dict):
+        raw_query = config.get("query")
+        if isinstance(raw_query, str) and raw_query.strip():
+            return raw_query.strip()
+    return "research digest"
+
+
+def _resolve_generated_at_utc(
+    *,
+    ctx: dict[str, Any],
+    papers: list[ResearchPaper],
+    mode: str,
+) -> datetime:
+    config = ctx.get("config", {})
+    if isinstance(config, dict):
+        raw_generated_at = config.get("generated_at_utc")
+        if isinstance(raw_generated_at, str) and raw_generated_at.strip():
+            try:
+                return _parse_aware_datetime(raw_generated_at)
+            except ValueError as exc:
+                raise ValueError("config.generated_at_utc must be ISO-8601 when provided.") from exc
+    if mode == "replay":
+        return _deterministic_replay_timestamp(papers)
+    return datetime.now(timezone.utc)
+
+
+def _deterministic_replay_timestamp(papers: list[ResearchPaper]) -> datetime:
+    timestamps: list[datetime] = []
+    for paper in papers:
+        try:
+            timestamps.append(_parse_aware_datetime(paper.published))
+        except ValueError:
+            continue
+    if timestamps:
+        return max(timestamps) + timedelta(days=1)
+    return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse_aware_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _base_synthesis_diagnostics(
+    *,
+    mode: str,
+    provider_name: str,
+    model: str,
+    prompt: str,
+) -> dict[str, Any]:
+    prompt_chars = len(prompt)
+    return {
+        "status": "pending",
+        "mode": mode,
+        "provider": provider_name,
+        "model": model,
+        "prompt_chars": prompt_chars,
+        "est_prompt_tokens": _estimate_tokens_from_chars(prompt_chars),
+        "retry_count": 0,
+        "finish_reason": None,
+        "overflow_detected": False,
+        "error": None,
+    }
+
+
+def _record_failure_diagnostics(*, diagnostics: dict[str, Any], error_text: str) -> None:
+    finish_reason = _extract_finish_reason(error_text)
+    diagnostics["status"] = "failed"
+    diagnostics["finish_reason"] = finish_reason
+    diagnostics["overflow_detected"] = _is_overflow_error(error_text=error_text, finish_reason=finish_reason)
+    diagnostics["error"] = error_text
+
+
+def _extract_finish_reason(error_text: str) -> str | None:
+    match = _FINISH_REASON_RE.search(error_text)
+    if match is None:
+        return None
+    value = match.group(1).strip().strip(".")
+    if value.lower() in {"none", "null"}:
+        return None
+    return value
+
+
+def _is_overflow_error(*, error_text: str, finish_reason: str | None) -> bool:
+    if finish_reason == "length":
+        return True
+    lowered = error_text.lower()
+    return "truncat" in lowered or "max_tokens" in lowered
+
+
+def _estimate_tokens_from_chars(char_count: int) -> int:
+    return (char_count + 3) // 4
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -111,30 +111,30 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 ## File-Level Implementation Plan
 
 ### Phase O0 — Baseline Diagnostics
-- [ ] O0.1 Add `synthesis_diagnostics.json` output from `synthesize_digest`.
-- [ ] O0.2 Ensure OpenAI truncation metadata is captured into diagnostics (currently available via exception text).
-- [ ] O0.3 Add tests asserting diagnostics artifact presence on success/failure paths.
+- [X] O0.1 Add `synthesis_diagnostics.json` output from `synthesize_digest`.
+- [X] O0.2 Ensure OpenAI truncation metadata is captured into diagnostics (currently available via exception text).
+- [X] O0.3 Add tests asserting diagnostics artifact presence on success/failure paths.
 
 ### Phase O1 — Compact Output Contract
-- [ ] O1.1 Add `SynthesisHighlights` model (agent-local).
-- [ ] O1.2 Change provider response model from `ResearchDigest` to `SynthesisHighlights`.
-- [ ] O1.3 Build `ResearchDigest` in Python using selected/raw input papers.
-- [ ] O1.4 Keep citation validation strict against input paper IDs.
+- [X] O1.1 Add `SynthesisHighlights` model (agent-local).
+- [X] O1.2 Change provider response model from `ResearchDigest` to `SynthesisHighlights`.
+- [X] O1.3 Build `ResearchDigest` in Python using selected/raw input papers.
+- [X] O1.4 Keep citation validation strict against input paper IDs.
 
 ### Phase O2 — Input Compression
-- [ ] O2.1 Add deterministic compression helper in `synthesis.py` (or `synthesis_utils.py`).
-- [ ] O2.2 Update prompt to include compressed JSON only.
-- [ ] O2.3 Add unit tests for compression bounds and determinism.
+- [X] O2.1 Add deterministic compression helper in `synthesis.py` (or `synthesis_utils.py`).
+- [X] O2.2 Update prompt to include compressed JSON only.
+- [X] O2.3 Add unit tests for compression bounds and determinism.
 
 ### Phase O3 — Budget + Retry
-- [ ] O3.1 Add deterministic prompt budget estimator/reducer.
-- [ ] O3.2 Add one retry for overflow-like parse/validation failures.
-- [ ] O3.3 Emit applied limits and retry outcome in diagnostics.
+- [X] O3.1 Add deterministic prompt budget estimator/reducer.
+- [X] O3.2 Add one retry for overflow-like parse/validation failures.
+- [X] O3.3 Emit applied limits and retry outcome in diagnostics.
 
 ### Phase O4 — Regression & Smoke
-- [ ] O4.1 Update synthesis tests for compact contract.
-- [ ] O4.2 Add replay integration test with larger selected set and forced small output caps.
-- [ ] O4.3 Add CLI scorer smoke assertion that synthesis succeeds with scorer-enabled plans under conservative caps.
+- [X] O4.1 Update synthesis tests for compact contract.
+- [X] O4.2 Add replay integration test with larger selected set and forced small output caps.
+- [X] O4.3 Add CLI scorer smoke assertion that synthesis succeeds with scorer-enabled plans under conservative caps.
 
 ---
 
