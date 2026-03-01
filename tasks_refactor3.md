@@ -428,13 +428,13 @@ Acceptance criteria:
 
 ## 6.3 Implement Deterministic Ingest + Snapshot Boundary
 
-- [ ] 6.3.1 Ingest step:
+- [X] 6.3.1 Ingest step:
   - Fetch ArXiv Atom feed (export.arxiv.org).
   - Parse into structured `ResearchPaper`.
-- [ ] 6.3.2 Write raw snapshot artifact:
+- [X] 6.3.2 Write raw snapshot artifact:
   - `raw_feed.xml`
   - `papers_raw.json`
-- [ ] 6.3.3 Determinism rule:
+- [X] 6.3.3 Determinism rule:
   - If `mode=replay`, skip network call and load from snapshot artifact.
   - Snapshot artifact is required input in replay mode.
 
