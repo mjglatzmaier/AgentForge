@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -86,6 +88,174 @@ operations_policy:
 """.strip(),
         encoding="utf-8",
     )
+
+
+def _write_resume_plugin(base_dir: Path, *, module_name: str = "resume_test_plugin") -> None:
+    plugin_path = base_dir / f"{module_name}.py"
+    plugin_path.write_text(
+        """
+import hashlib
+import json
+from pathlib import Path
+
+def run(request):
+    run_dir = Path(request.metadata["run_dir"])
+    counts_path = run_dir / "control" / "exec_counts.json"
+    counts = {}
+    if counts_path.exists():
+        counts = json.loads(counts_path.read_text(encoding="utf-8"))
+    counts[request.node_id] = counts.get(request.node_id, 0) + 1
+    counts_path.write_text(json.dumps(counts, sort_keys=True), encoding="utf-8")
+
+    outputs_dir = Path(request.metadata["outputs_dir"])
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{request.operation}.json"
+    file_path = outputs_dir / file_name
+    file_path.write_text(json.dumps({"node_id": request.node_id}), encoding="utf-8")
+
+    artifact_name = "digest_json" if request.operation == "synthesize_digest" else "papers_raw"
+    return {
+        "status": "success",
+        "produced_artifacts": [
+            {
+                "name": artifact_name,
+                "type": "json",
+                "path": f"outputs/{file_name}",
+                "sha256": hashlib.sha256(file_path.read_bytes()).hexdigest(),
+                "producer_step_id": request.node_id,
+            }
+        ],
+    }
+""".strip(),
+        encoding="utf-8",
+    )
+
+
+def _write_resume_run_fixture(
+    base_dir: Path,
+    *,
+    run_id: str,
+    node_states: dict[str, str],
+    include_failed_event: bool = False,
+    retry_limit: int | None = None,
+    module_name: str = "resume_test_plugin",
+) -> Path:
+    run_dir = base_dir / "runs" / run_id
+    control_dir = run_dir / "control"
+    control_dir.mkdir(parents=True, exist_ok=True)
+
+    request_path = control_dir / "inputs" / "request.json"
+    request_path.parent.mkdir(parents=True, exist_ok=True)
+    request_path.write_text("{}", encoding="utf-8")
+
+    fetch_output = run_dir / "steps" / "00_fetch" / "outputs" / "fetch_and_snapshot.json"
+    fetch_output.parent.mkdir(parents=True, exist_ok=True)
+    fetch_output.write_text('{"papers": []}', encoding="utf-8")
+    fetch_sha = hashlib.sha256(fetch_output.read_bytes()).hexdigest()
+    request_sha = hashlib.sha256(request_path.read_bytes()).hexdigest()
+
+    manifest_payload = {
+        "run_id": run_id,
+        "artifacts": [
+            {
+                "name": "request_json",
+                "type": "json",
+                "path": "control/inputs/request.json",
+                "sha256": request_sha,
+                "producer_step_id": "dispatch_request",
+            },
+            {
+                "name": "papers_raw",
+                "type": "json",
+                "path": "steps/00_fetch/outputs/fetch_and_snapshot.json",
+                "sha256": fetch_sha,
+                "producer_step_id": "fetch",
+            },
+        ],
+    }
+    (run_dir / "manifest.json").write_text(json.dumps(manifest_payload), encoding="utf-8")
+
+    retry_policy = {"transient_max_retries": retry_limit} if retry_limit is not None else {}
+    plan_payload = {
+        "plan_id": "resume-plan",
+        "max_parallel": 1,
+        "trigger": {"kind": "manual", "source": "cli", "request_artifact": "request_json"},
+        "nodes": [
+            {
+                "node_id": "fetch",
+                "agent_id": "arxiv.research",
+                "operation": "fetch_and_snapshot",
+                "inputs": ["request_json"],
+                "outputs": ["papers_raw"],
+            },
+            {
+                "node_id": "synthesize",
+                "agent_id": "arxiv.research",
+                "operation": "synthesize_digest",
+                "inputs": ["papers_raw"],
+                "outputs": ["digest_json"],
+                "depends_on": ["fetch"],
+                "retry_policy": retry_policy,
+            },
+        ],
+    }
+    (control_dir / "plan.json").write_text(json.dumps(plan_payload), encoding="utf-8")
+    (control_dir / "trigger.json").write_text(
+        json.dumps({"kind": "manual", "source": "cli", "request_artifact": "request_json"}),
+        encoding="utf-8",
+    )
+    registry_payload = {
+        "schema_version": 1,
+        "agents": [
+            {
+                "agent_id": "arxiv.research",
+                "version": "1.0.0",
+                "description": "test",
+                "intents": ["research"],
+                "tags": ["digest"],
+                "input_contracts": ["Req"],
+                "output_contracts": ["Res"],
+                "runtime": {
+                    "runtime": "python",
+                    "type": "python_subprocess",
+                    "entrypoint": f"{module_name}:run",
+                    "timeout_s": 30,
+                    "max_concurrency": 1,
+                },
+                "capabilities": {
+                    "operations": [
+                        {"name": "fetch_and_snapshot", "inputs": ["request_json"], "outputs": ["papers_raw"]},
+                        {"name": "synthesize_digest", "inputs": ["papers_raw"], "outputs": ["digest_json"]},
+                    ]
+                },
+                "operations_policy": {
+                    "terminal_access": "none",
+                    "allowed_commands": [],
+                    "fs_scope": ["."],
+                    "network_access": "none",
+                    "network_allowlist": [],
+                },
+            }
+        ],
+        "capability_index": {},
+    }
+    (control_dir / "registry.json").write_text(json.dumps(registry_payload), encoding="utf-8")
+    (control_dir / "runtime_state.json").write_text(
+        json.dumps({"schema_version": 1, "plan_id": "resume-plan", "node_states": node_states}),
+        encoding="utf-8",
+    )
+
+    if include_failed_event:
+        event_payload = {
+            "schema_version": 1,
+            "event_id": "evt-failed-1",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "event_type": "node_failed",
+            "node_id": "synthesize",
+            "payload": {"state": "failed", "retry_attempt": 1},
+        }
+        (control_dir / "events.jsonl").write_text(json.dumps(event_payload) + "\n", encoding="utf-8")
+    return run_dir
 
 
 def test_cli_run_invocation_creates_run_directory(tmp_path: Path) -> None:
@@ -422,7 +592,13 @@ def test_cli_dispatch_runtime_failure_uses_exit_code_two_with_concise_error(tmp_
     assert "node_id=dispatch_node" in completed.stderr
 
 
-def test_cli_resume_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
+def test_cli_resume_continues_from_runtime_state_without_rerunning_succeeded_nodes(tmp_path: Path) -> None:
+    _write_resume_plugin(tmp_path)
+    run_dir = _write_resume_run_fixture(
+        tmp_path,
+        run_id="run-001",
+        node_states={"fetch": "succeeded", "synthesize": "pending"},
+    )
     completed = subprocess.run(
         [
             sys.executable,
@@ -439,7 +615,141 @@ def test_cli_resume_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
         text=True,
         check=False,
     )
-    assert completed.returncode == 2
+    assert completed.returncode == 0
+    assert completed.stdout.strip() == "run-001"
+    counts = json.loads((run_dir / "control" / "exec_counts.json").read_text(encoding="utf-8"))
+    assert counts == {"synthesize": 1}
+    manifest_payload = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_names = {artifact["name"] for artifact in manifest_payload["artifacts"]}
+    assert artifact_names == {"request_json", "papers_raw", "digest_json"}
+    snapshot_payload = json.loads((run_dir / "control" / "snapshot.json").read_text(encoding="utf-8"))
+    assert snapshot_payload["node_states"] == {"fetch": "succeeded", "synthesize": "succeeded"}
+
+
+def test_cli_resume_rejects_terminal_run_when_retry_exhausted(tmp_path: Path) -> None:
+    _write_resume_plugin(tmp_path)
+    run_dir = _write_resume_run_fixture(
+        tmp_path,
+        run_id="run-002",
+        node_states={"fetch": "succeeded", "synthesize": "failed"},
+        include_failed_event=True,
+        retry_limit=1,
+    )
+    events_before = (run_dir / "control" / "events.jsonl").read_text(encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "resume",
+            "--run_id",
+            "run-002",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "Cannot resume terminal run 'run-002'" in completed.stderr
+    assert not (run_dir / "control" / "exec_counts.json").exists()
+    manifest_payload = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_names = {artifact["name"] for artifact in manifest_payload["artifacts"]}
+    assert artifact_names == {"request_json", "papers_raw"}
+    assert (run_dir / "control" / "events.jsonl").read_text(encoding="utf-8") == events_before
+
+
+def test_cli_resume_rejects_missing_run_id_with_clear_error(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "resume",
+            "--run_id",
+            "run-missing",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "Run not found for resume: run-missing" in completed.stderr
+
+
+def test_cli_resume_rejects_blank_run_id_with_clear_error(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "resume",
+            "--run_id",
+            "   ",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "resume requires a non-empty run_id." in completed.stderr
+
+
+def test_cli_resume_keeps_event_log_append_only_across_resume_calls(tmp_path: Path) -> None:
+    _write_resume_plugin(tmp_path)
+    run_dir = _write_resume_run_fixture(
+        tmp_path,
+        run_id="run-003",
+        node_states={"fetch": "succeeded", "synthesize": "pending"},
+    )
+    first = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "resume",
+            "--run_id",
+            "run-003",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert first.returncode == 0
+    events_after_first = (run_dir / "control" / "events.jsonl").read_text(encoding="utf-8")
+    assert events_after_first.strip()
+
+    second = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "resume",
+            "--run_id",
+            "run-003",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert second.returncode == 1
+    assert "Cannot resume terminal run 'run-003'" in second.stderr
+    events_after_second = (run_dir / "control" / "events.jsonl").read_text(encoding="utf-8")
+    assert events_after_second == events_after_first
 
 
 def test_cli_status_reports_terminal_run_summary(tmp_path: Path) -> None:
@@ -533,3 +843,24 @@ def test_cli_status_reports_non_terminal_without_snapshot(tmp_path: Path) -> Non
     assert payload["status"] == "non-terminal"
     assert payload["node_states"] == {"node-a": "running", "node-b": "pending"}
     assert payload["node_summary"] == {"pending": 1, "running": 1}
+
+
+def test_cli_status_rejects_missing_run_id_with_clear_error(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "status",
+            "--run_id",
+            "run-missing",
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "Run not found for status: run-missing" in completed.stderr

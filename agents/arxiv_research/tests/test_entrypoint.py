@@ -130,7 +130,6 @@ def test_run_dispatches_render_report(tmp_path: Path, monkeypatch: pytest.Monkey
     assert result.status is ExecutionStatus.SUCCESS
     assert result.metrics["highlights"] == 0
     assert {artifact.name for artifact in result.produced_artifacts} == {
-        "digest_json",
         "report_md",
         "sources_json",
     }

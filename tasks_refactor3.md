@@ -665,11 +665,11 @@ Acceptance criteria:
   - read control snapshot/events/manifest for the run
   - display run terminal/non-terminal status
   - summarize node states and latest event id
-- [ ] 10.2 Implement `agentforge resume --run_id <id>`:
+- [X] 10.2 Implement `agentforge resume --run_id <id>`:
   - reload persisted control state and continue schedulable work
   - respect existing retry policy counters/state
   - avoid re-running already-succeeded nodes
-- [ ] 10.3 Consistency safeguards:
+- [X] 10.3 Consistency safeguards:
   - reject resume when run is already terminal
   - clear error messages for missing/invalid run ids
   - keep event log append-only across resume calls
@@ -682,14 +682,14 @@ Acceptance criteria:
 
 ### Phase 11 — Production Smoke + Integration Tests
 
-- [ ] 11.1 CLI integration test:
+- [X] 11.1 CLI integration test:
   - run `dispatch` on `arxiv.research` in replay mode using fixed snapshots
   - assert `digest.json`, `report.md`, `sources.json` are produced
   - assert `request_json` artifact and control artifacts exist
-- [ ] 11.2 Resume integration test:
+- [X] 11.2 Resume integration test:
   - simulate interrupted run and resume
   - verify no duplicate artifacts and correct terminal state
-- [ ] 11.3 Status integration test:
+- [X] 11.3 Status integration test:
   - verify status output for running, failed, and succeeded runs
   - verify event/snapshot consistency with manifest step outcomes
 

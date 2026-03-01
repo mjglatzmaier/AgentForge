@@ -83,6 +83,7 @@ def _execute_step_operation(
     outputs = payload.get("outputs", [])
     if not isinstance(outputs, list):
         raise TypeError("Step payload outputs must be a list.")
+    outputs = _filter_passthrough_outputs(outputs=outputs, input_names=set(request.inputs))
 
     produced_artifacts = _build_produced_artifacts(
         request=request,
@@ -160,6 +161,25 @@ def _build_produced_artifacts(
             )
         )
     return produced
+
+
+def _filter_passthrough_outputs(
+    *,
+    outputs: list[dict[str, Any]],
+    input_names: set[str],
+) -> list[dict[str, Any]]:
+    if not input_names:
+        return outputs
+    filtered: list[dict[str, Any]] = []
+    for output in outputs:
+        if not isinstance(output, dict):
+            filtered.append(output)
+            continue
+        raw_name = output.get("name")
+        if isinstance(raw_name, str) and raw_name.strip() in input_names:
+            continue
+        filtered.append(output)
+    return filtered
 
 
 def _required_output_field(output: dict[str, Any], key: str) -> str:

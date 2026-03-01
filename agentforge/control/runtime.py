@@ -47,6 +47,7 @@ def execute_control_run(
     run_dir: str | Path,
     *,
     runtime_adapters: Mapping[AgentRuntimeKind, RuntimeAdapter] | None = None,
+    node_states: Mapping[str, ControlNodeState] | None = None,
     retry_counts: Mapping[str, int] | None = None,
 ) -> ControlRunExecution:
     """Execute one control plan from persisted run artifacts."""
@@ -60,7 +61,7 @@ def execute_control_run(
     nodes_by_id = {node.node_id: node for node in plan.nodes}
     node_index = {node.node_id: i for i, node in enumerate(plan.nodes)}
 
-    node_states = {node.node_id: node.state for node in plan.nodes}
+    node_states = _merge_initial_node_states(plan=plan, node_states=node_states)
     node_results: dict[str, ExecutionResult] = {}
     mutable_retry_counts = dict(retry_counts or {})
     last_event_id: str | None = None
@@ -172,6 +173,21 @@ def execute_control_run(
         node_states=node_states,
         node_results=node_results,
     )
+
+
+def _merge_initial_node_states(
+    *,
+    plan: ControlPlan,
+    node_states: Mapping[str, ControlNodeState] | None,
+) -> dict[str, ControlNodeState]:
+    states = {node.node_id: node.state for node in plan.nodes}
+    if node_states is None:
+        return states
+    for node_id, state in node_states.items():
+        if node_id not in states:
+            raise ValueError(f"Unknown node_id in initial control state: {node_id}")
+        states[node_id] = state
+    return states
 
 
 def _default_runtime_adapters() -> dict[AgentRuntimeKind, RuntimeAdapter]:

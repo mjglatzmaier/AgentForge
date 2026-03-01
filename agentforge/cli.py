@@ -15,10 +15,13 @@ import yaml
 from agentforge.control.events import load_control_events
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot, load_agent_registry
 from agentforge.control.runtime import ControlRunExecution, execute_control_run
+from agentforge.control.scheduler import plan_scheduler_tick
 from agentforge.control.state import persist_control_artifacts
 from agentforge.contracts.models import (
     ArtifactRef,
+    ControlEventType,
     ControlNode,
+    ControlNodeState,
     ControlPlan,
     ExecutionStatus,
     Mode,
@@ -119,14 +122,40 @@ def run_cli(argv: list[str] | None = None) -> int:
                 execution = execute_control_run(run_dir)
             except Exception as exc:  # map runtime/execution-plane failures to exit code 2
                 raise RuntimeError(f"dispatch runtime failure (run_id={run_id}): {exc}") from exc
-            failure_message = _dispatch_failure_message(run_id=run_id, execution=execution)
+            failure_message = _execution_failure_message(run_id=run_id, command="dispatch", execution=execution)
             if failure_message:
                 raise RuntimeError(failure_message)
             print(run_id)
             return 0
 
         if args.command == "resume":
-            raise RuntimeError("resume command is not implemented yet")
+            run_dir, run_id = _resolve_run_dir(
+                run_id=args.run_id,
+                base_dir=Path(args.base_dir),
+                command="resume",
+            )
+            resume_node_states = _load_resume_node_states(run_dir)
+            resume_retry_counts = _load_retry_counts_from_events(run_dir)
+            _validate_resume_not_terminal(
+                run_dir=run_dir,
+                node_states=resume_node_states,
+                retry_counts=resume_retry_counts,
+            )
+            try:
+                execution = execute_control_run(
+                    run_dir,
+                    node_states=resume_node_states,
+                    retry_counts=resume_retry_counts,
+                )
+            except Exception as exc:  # map runtime/execution-plane failures to exit code 2
+                raise RuntimeError(f"resume runtime failure (run_id={run_id}): {exc}") from exc
+            failure_message = _execution_failure_message(
+                run_id=run_id, command="resume", execution=execution
+            )
+            if failure_message:
+                raise RuntimeError(failure_message)
+            print(run_id)
+            return 0
 
         if args.command == "status":
             payload = _build_status_payload(run_id=args.run_id, base_dir=Path(args.base_dir))
@@ -251,7 +280,9 @@ def _validate_plan_agents_exist(*, plan: ControlPlan, agent_id: str, registry: A
         raise ValueError(f"ControlPlan references unknown agent_id(s): {missing}")
 
 
-def _dispatch_failure_message(*, run_id: str, execution: ControlRunExecution) -> str | None:
+def _execution_failure_message(
+    *, run_id: str, command: str, execution: ControlRunExecution
+) -> str | None:
     failed_node_ids = sorted(
         node_id
         for node_id, result in execution.node_results.items()
@@ -262,11 +293,11 @@ def _dispatch_failure_message(*, run_id: str, execution: ControlRunExecution) ->
     node_id = failed_node_ids[0]
     result = execution.node_results[node_id]
     detail = result.error or result.traceback_excerpt or "execution failed"
-    return f"dispatch failed (run_id={run_id}, node_id={node_id}): {detail}"
+    return f"{command} failed (run_id={run_id}, node_id={node_id}): {detail}"
 
 
 def _build_status_payload(*, run_id: str, base_dir: Path) -> dict[str, Any]:
-    run_dir = base_dir / "runs" / run_id
+    run_dir, normalized_run_id = _resolve_run_dir(run_id=run_id, base_dir=base_dir, command="status")
     manifest = load_manifest(run_dir / "manifest.json")
     snapshot = _load_status_snapshot(run_dir)
     node_states = _snapshot_node_states(snapshot)
@@ -275,7 +306,7 @@ def _build_status_payload(*, run_id: str, base_dir: Path) -> dict[str, Any]:
     latest_event_id = events[-1].event_id if events else snapshot.get("last_event_id")
     terminal = bool(node_states) and all(_is_terminal_state(state) for state in node_states.values())
     return {
-        "run_id": run_id,
+        "run_id": normalized_run_id,
         "status": "terminal" if terminal else "non-terminal",
         "node_states": node_states,
         "node_summary": node_summary,
@@ -326,3 +357,70 @@ def _summarize_node_states(node_states: dict[str, str]) -> dict[str, int]:
 
 def _is_terminal_state(state: str) -> bool:
     return state in {"succeeded", "failed", "cancelled"}
+
+
+def _load_resume_node_states(run_dir: Path) -> dict[str, ControlNodeState]:
+    snapshot = _load_status_snapshot(run_dir)
+    state_names = _snapshot_node_states(snapshot)
+    node_states: dict[str, ControlNodeState] = {}
+    for node_id, state in state_names.items():
+        try:
+            node_states[node_id] = ControlNodeState(state)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported control node state in persisted snapshot: {state}") from exc
+    return node_states
+
+
+def _load_retry_counts_from_events(run_dir: Path) -> dict[str, int]:
+    events = load_control_events(run_dir)
+    retry_counts: dict[str, int] = {}
+    for event in events:
+        if event.event_type is not ControlEventType.NODE_FAILED or not event.node_id:
+            continue
+        retry_attempt = event.payload.get("retry_attempt")
+        if isinstance(retry_attempt, int) and retry_attempt >= 0:
+            retry_counts[event.node_id] = max(retry_counts.get(event.node_id, 0), retry_attempt)
+            continue
+        retry_counts[event.node_id] = retry_counts.get(event.node_id, 0) + 1
+    return retry_counts
+
+
+def _validate_resume_not_terminal(
+    *,
+    run_dir: Path,
+    node_states: dict[str, ControlNodeState],
+    retry_counts: dict[str, int],
+) -> None:
+    plan = _load_control_plan(run_dir)
+    tick = plan_scheduler_tick(
+        plan,
+        node_states=node_states,
+        retry_counts=retry_counts,
+    )
+    if tick.dispatch_node_ids:
+        return
+    if any(not _is_terminal_state(state.value) for state in tick.node_states.values()):
+        return
+    raise ValueError(
+        f"Cannot resume terminal run '{run_dir.name}': no schedulable nodes remain."
+    )
+
+
+def _load_control_plan(run_dir: Path) -> ControlPlan:
+    plan_path = run_dir / "control" / "plan.json"
+    if not plan_path.exists():
+        raise FileNotFoundError(f"Control plan not found: {plan_path}")
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    return ControlPlan.model_validate(payload)
+
+
+def _resolve_run_dir(*, run_id: str, base_dir: Path, command: str) -> tuple[Path, str]:
+    normalized_run_id = run_id.strip()
+    if not normalized_run_id:
+        raise ValueError(f"{command} requires a non-empty run_id.")
+    run_dir = base_dir / "runs" / normalized_run_id
+    if not run_dir.exists() or not run_dir.is_dir():
+        raise FileNotFoundError(
+            f"Run not found for {command}: {normalized_run_id} (expected {run_dir})."
+        )
+    return run_dir, normalized_run_id
