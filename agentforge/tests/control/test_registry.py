@@ -106,3 +106,17 @@ def test_build_registry_snapshot_is_deterministic(tmp_path: Path) -> None:
     registry_a = load_agent_registry_from_paths([first, second])
     registry_b = load_agent_registry_from_paths([second, first])
     assert build_registry_snapshot(registry_a) == build_registry_snapshot(registry_b)
+
+
+def test_arxiv_research_agentspec_validates_under_registry() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    agent_yaml = repo_root / "agents" / "arxiv_research" / "agent.yaml"
+
+    registry = load_agent_registry_from_paths([agent_yaml])
+    spec = registry.get("arxiv.research")
+
+    assert spec is not None
+    assert spec.version == "1.0.0"
+    assert spec.runtime.entrypoint == "agents.arxiv_research.entrypoint:run"
+    assert spec.runtime.max_concurrency == 2
+    assert spec.operations_policy.network_allowlist == ["export.arxiv.org"]

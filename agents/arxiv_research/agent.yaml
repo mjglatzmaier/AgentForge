@@ -1,0 +1,25 @@
+agent_id: arxiv.research
+version: 1.0.0
+description: Fetches ArXiv papers by query and produces a structured research digest.
+intents:
+  - research
+  - arxiv
+  - digest
+input_contracts:
+  - ResearchRequest
+output_contracts:
+  - ResearchDigest
+  - report.md
+runtime:
+  runtime: python
+  entrypoint: agents.arxiv_research.entrypoint:run
+  timeout_s: 120
+  max_concurrency: 2
+operations_policy:
+  terminal_access: none
+  allowed_commands: []
+  fs_scope:
+    - .
+  network_access: allowlist
+  network_allowlist:
+    - export.arxiv.org

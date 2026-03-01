@@ -363,7 +363,7 @@ tests/
 
 ## 6.1 Define ArXivResearch AgentSpec
 
-- [ ] 6.1.1 Create `agents/arxiv_research/agent.yaml`:
+- [X] 6.1.1 Create `agents/arxiv_research/agent.yaml`:
   - identity:
     - agent_id: "arxiv.research"
     - version: "1.0.0"
