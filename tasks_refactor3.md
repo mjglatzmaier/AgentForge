@@ -280,7 +280,7 @@ Acceptance criteria:
 
 ## Phase 4 — Scheduler v1 (Dependencies + Parallelism + Artifact Handoff)
 
-- [ ] 4.1 Implement scheduler:
+- [X] 4.1 Implement scheduler:
   - nodes become ready when dependencies succeeded
   - execute up to ControlPlan.max_parallel
   - enforce per-agent max_concurrency

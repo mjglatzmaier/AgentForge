@@ -18,6 +18,7 @@ from agentforge.control.registry import (
     export_registry_snapshot,
     load_agent_registry,
 )
+from agentforge.control.scheduler import SchedulerTick, plan_scheduler_tick
 from agentforge.control.state import persist_control_artifacts
 
 __all__ = [
@@ -32,6 +33,8 @@ __all__ = [
     "export_registry_snapshot",
     "load_control_events",
     "load_agent_registry",
+    "plan_scheduler_tick",
     "replay_control_events",
     "persist_control_artifacts",
+    "SchedulerTick",
 ]
