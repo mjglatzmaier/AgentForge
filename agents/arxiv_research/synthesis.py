@@ -22,13 +22,19 @@ _SYSTEM_PROMPT = (
 _DEFAULT_MODEL = "gpt-4o-mini"
 _DEFAULT_TIMEOUT_S = 60.0
 _DEFAULT_MAX_OUTPUT_TOKENS = 2000
+_DEFAULT_TITLE_MAX_CHARS = 180
+_DEFAULT_ABSTRACT_SNIPPET_CHARS = 600
 _FINISH_REASON_RE = re.compile(r"finish_reason=([A-Za-z0-9_-]+|None|null)")
 
 
 def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     papers = _load_synthesis_papers(ctx)
-    prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
+    prompt = _build_synthesis_prompt(
+        papers=papers,
+        title_max_chars=int(settings["title_max_chars"]),
+        abstract_snippet_chars=int(settings["abstract_snippet_chars"]),
+    )
     provider = _resolve_provider(ctx)
     step_dir = Path(ctx["step_dir"])
     outputs_dir = step_dir / "outputs"
@@ -97,15 +103,23 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_synthesis_prompt(papers: list[ResearchPaper]) -> str:
-    ordered = sorted(papers, key=lambda paper: (paper.published, paper.paper_id))
-    papers_payload = [paper.model_dump(mode="json") for paper in ordered]
+def _build_synthesis_prompt(
+    *,
+    papers: list[ResearchPaper],
+    title_max_chars: int,
+    abstract_snippet_chars: int,
+) -> str:
+    papers_payload = _compress_papers_for_prompt(
+        papers,
+        title_max_chars=title_max_chars,
+        abstract_snippet_chars=abstract_snippet_chars,
+    )
     papers_json = json.dumps(papers_payload, sort_keys=True, indent=2)
     return (
         "Summarize key contributions from the provided papers.\n"
         "Produce max of 5 concise bullet highlights for the most important findings. Max 100 words per highlight, use clear, high-level language.\n"
         "Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
-        "Input papers JSON:\n"
+        "Input compressed papers JSON:\n"
         f"{papers_json}"
     )
 
@@ -119,7 +133,15 @@ def _synthesis_settings(ctx: dict[str, Any]) -> dict[str, str | float | int | No
     model = str(config.get("model", _DEFAULT_MODEL))
     timeout_s = float(config.get("timeout_s", _DEFAULT_TIMEOUT_S))
     max_output_tokens = int(config.get("max_output_tokens", _DEFAULT_MAX_OUTPUT_TOKENS))
+    title_max_chars = int(config.get("title_max_chars", _DEFAULT_TITLE_MAX_CHARS))
+    abstract_snippet_chars = int(
+        config.get("abstract_snippet_chars", _DEFAULT_ABSTRACT_SNIPPET_CHARS)
+    )
     raw_seed = config.get("seed")
+    if title_max_chars < 1:
+        raise ValueError("title_max_chars must be >= 1.")
+    if abstract_snippet_chars < 1:
+        raise ValueError("abstract_snippet_chars must be >= 1.")
 
     if mode == "replay":
         seed = int(raw_seed) if raw_seed is not None else 0
@@ -133,6 +155,8 @@ def _synthesis_settings(ctx: dict[str, Any]) -> dict[str, str | float | int | No
         "model": model,
         "timeout_s": timeout_s,
         "max_output_tokens": max_output_tokens,
+        "title_max_chars": title_max_chars,
+        "abstract_snippet_chars": abstract_snippet_chars,
         "seed": seed,
         "temperature": temperature,
     }
@@ -199,6 +223,29 @@ def _validate_citations(*, digest: ResearchDigest, papers: list[ResearchPaper]) 
 
     if invalid_entries:
         raise ProviderValidationError("Invalid highlight citations: " + "; ".join(invalid_entries))
+
+
+def _compress_papers_for_prompt(
+    papers: list[ResearchPaper],
+    *,
+    title_max_chars: int,
+    abstract_snippet_chars: int,
+) -> list[dict[str, Any]]:
+    ordered = sorted(papers, key=lambda paper: (paper.published, paper.paper_id))
+    return [
+        {
+            "paper_id": paper.paper_id,
+            "title": _truncate_for_prompt(paper.title, title_max_chars),
+            "published": paper.published,
+            "categories": sorted(paper.categories),
+            "abstract_snippet": _truncate_for_prompt(paper.abstract, abstract_snippet_chars),
+        }
+        for paper in ordered
+    ]
+
+
+def _truncate_for_prompt(value: str, max_chars: int) -> str:
+    return value[:max_chars]
 
 
 def _build_research_digest(

@@ -122,9 +122,9 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 - [X] O1.4 Keep citation validation strict against input paper IDs.
 
 ### Phase O2 — Input Compression
-- [ ] O2.1 Add deterministic compression helper in `synthesis.py` (or `synthesis_utils.py`).
-- [ ] O2.2 Update prompt to include compressed JSON only.
-- [ ] O2.3 Add unit tests for compression bounds and determinism.
+- [X] O2.1 Add deterministic compression helper in `synthesis.py` (or `synthesis_utils.py`).
+- [X] O2.2 Update prompt to include compressed JSON only.
+- [X] O2.3 Add unit tests for compression bounds and determinism.
 
 ### Phase O3 — Budget + Retry
 - [ ] O3.1 Add deterministic prompt budget estimator/reducer.

@@ -8,7 +8,7 @@ import pytest
 
 from agentforge.providers import LlmResult, ProviderValidationError
 from agents.arxiv_research import synthesis
-from agents.arxiv_research.models import DigestBullet, SynthesisHighlights
+from agents.arxiv_research.models import DigestBullet, ResearchPaper, SynthesisHighlights
 
 
 def _papers_payload() -> list[dict[str, Any]]:
@@ -165,7 +165,10 @@ def test_synthesize_digest_uses_provider_and_writes_output(
     call = provider.calls[0]
     assert call["response_model"] is SynthesisHighlights
     assert "Summarize key contributions" in call["prompt"]
+    assert "Input compressed papers JSON" in call["prompt"]
     assert "cited_paper_ids" in call["prompt"]
+    assert '"abstract_snippet"' in call["prompt"]
+    assert '"authors"' not in call["prompt"]
 
 
 def test_synthesize_digest_rejects_uncited_highlights(
@@ -321,3 +324,60 @@ def test_replay_mode_produces_identical_digest_for_same_snapshot_inputs(
     digest_a = json.loads((run_a / "outputs" / "digest.json").read_text(encoding="utf-8"))
     digest_b = json.loads((run_b / "outputs" / "digest.json").read_text(encoding="utf-8"))
     assert digest_a == digest_b
+
+
+def test_compress_papers_for_prompt_enforces_bounds_and_fields() -> None:
+    papers = [
+        ResearchPaper.model_validate(
+            {
+                "paper_id": "b-paper",
+                "title": "B" * 20,
+                "authors": ["Bob"],
+                "abstract": "beta abstract " * 20,
+                "categories": ["cs.LG", "cs.AI"],
+                "published": "2026-01-02T00:00:00Z",
+            }
+        ),
+        ResearchPaper.model_validate(
+            {
+                "paper_id": "a-paper",
+                "title": "A" * 20,
+                "authors": ["Alice"],
+                "abstract": "alpha abstract " * 20,
+                "categories": ["cs.CL"],
+                "published": "2026-01-01T00:00:00Z",
+            }
+        ),
+    ]
+    compressed = synthesis._compress_papers_for_prompt(
+        papers,
+        title_max_chars=10,
+        abstract_snippet_chars=30,
+    )
+
+    assert [item["paper_id"] for item in compressed] == ["a-paper", "b-paper"]
+    assert set(compressed[0].keys()) == {
+        "paper_id",
+        "title",
+        "published",
+        "categories",
+        "abstract_snippet",
+    }
+    assert len(compressed[0]["title"]) <= 10
+    assert len(compressed[0]["abstract_snippet"]) <= 30
+    assert compressed[1]["categories"] == ["cs.AI", "cs.LG"]
+
+
+def test_compress_papers_for_prompt_is_deterministic() -> None:
+    papers = [ResearchPaper.model_validate(item) for item in _papers_payload()]
+    first = synthesis._compress_papers_for_prompt(
+        papers,
+        title_max_chars=180,
+        abstract_snippet_chars=600,
+    )
+    second = synthesis._compress_papers_for_prompt(
+        list(reversed(papers)),
+        title_max_chars=180,
+        abstract_snippet_chars=600,
+    )
+    assert first == second

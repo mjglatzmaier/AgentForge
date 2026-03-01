@@ -12,23 +12,23 @@ from agentforge.providers import LlmResult
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import load_manifest, register_artifact, save_manifest
 from agents.arxiv_research import synthesis
-from agents.arxiv_research.models import DigestBullet, ResearchPaper, SynthesisHighlights
+from agents.arxiv_research.models import DigestBullet, SynthesisHighlights
 
 
 class _ProviderFromPrompt:
     def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
         prompt = str(kwargs.get("prompt", ""))
-        marker = "Input papers JSON:\n"
+        marker = "Input compressed papers JSON:\n"
         papers_payload: list[dict[str, Any]] = []
         if marker in prompt:
             papers_payload = json.loads(prompt.split(marker, maxsplit=1)[1])
-        papers = [ResearchPaper.model_validate(item) for item in papers_payload]
         highlights: list[DigestBullet] = []
-        if papers:
+        if papers_payload:
+            paper_id = str(papers_payload[0]["paper_id"])
             highlights = [
                 DigestBullet(
                     text="Scorer smoke highlight",
-                    cited_paper_ids=[papers[0].paper_id],
+                    cited_paper_ids=[paper_id],
                 )
             ]
         payload = SynthesisHighlights(
