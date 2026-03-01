@@ -19,13 +19,15 @@ _SYSTEM_PROMPT = (
 )
 _DEFAULT_MODEL = "gpt-4o-mini"
 _DEFAULT_TIMEOUT_S = 60.0
-_DEFAULT_MAX_OUTPUT_TOKENS = 1200
+_DEFAULT_MAX_OUTPUT_TOKENS = 2000
 
 
 def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     papers = _load_papers_input(ctx, "papers_raw")
     prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
+    for key, value in settings.items():
+        print(f"Synthesis setting: {key} = {value}")
     provider = _resolve_provider(ctx)
 
     result: LlmResult[ResearchDigest] = provider.generate_json(
@@ -71,8 +73,8 @@ def _build_synthesis_prompt(papers: list[ResearchPaper]) -> str:
     papers_json = json.dumps(papers_payload, sort_keys=True, indent=2)
     return (
         "Summarize key contributions from the provided papers.\n"
-        "Produce concise bullet highlights for the most important findings.\n"
-        "Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
+        "Produce max of 5 concise bullet highlights for the most important findings. Max 100 words per highlight, use clear, high-level language.\n"
+        #"Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
         "Input papers JSON:\n"
         f"{papers_json}"
     )

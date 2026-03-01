@@ -1,4 +1,4 @@
-plan_id: arxiv-digest-demo-v1
+plan_id: arxiv-llm-agents-v1
 max_parallel: 2
 policy_snapshot: {}
 trigger:
@@ -12,10 +12,21 @@ nodes:
     metadata:
       config:
         mode: live
-        query: "(agent OR tool use OR planning) AND (cat:cs.AI OR cat:cs.LG)"
-        categories: [cs.AI, cs.LG, cs.CL]
-        max_results: 25
+        query: >
+          ("llm agent" OR "language agent" OR "tool use" OR workflow OR orchestration OR "multi-agent")
+          AND (architecture OR framework OR best-practice OR microsoft OR cybersecurity OR security)
+        categories: [cs.AI, cs.CL, cs.SE, cs.CR]
+        max_results: 40
         sort_by: relevance
+        ranking:
+          factors: [topic_alignment, citations, credibility, practical_impact, engagement, recency]
+          weights:
+            topic_alignment: 0.3
+            practical_impact: 0.2
+            citations: 0.2
+            credibility: 0.15
+            engagement: 0.05
+            recency: 0.1
 
   - node_id: synthesize_digest
     agent_id: arxiv.research

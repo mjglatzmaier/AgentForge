@@ -1,4 +1,4 @@
-plan_id: arxiv-digest-demo-v1
+plan_id: arxiv-llm-evaluation-v1
 max_parallel: 2
 policy_snapshot: {}
 trigger:
@@ -12,10 +12,21 @@ nodes:
     metadata:
       config:
         mode: live
-        query: "(agent OR tool use OR planning) AND (cat:cs.AI OR cat:cs.LG)"
-        categories: [cs.AI, cs.LG, cs.CL]
-        max_results: 25
+        query: >
+          ("llm evaluation" OR "agent evaluation" OR benchmark OR "single-turn" OR "multi-turn" OR "judge model")
+          AND (reliability OR robustness OR safety OR cybersecurity OR "red team" OR microsoft)
+        categories: [cs.AI, cs.CL, cs.CR, cs.SE]
+        max_results: 40
         sort_by: relevance
+        ranking:
+          factors: [topic_alignment, methodological_rigor, reproducibility, citations, credibility, recency]
+          weights:
+            topic_alignment: 0.3
+            methodological_rigor: 0.2
+            reproducibility: 0.15
+            citations: 0.15
+            credibility: 0.1
+            recency: 0.1
 
   - node_id: synthesize_digest
     agent_id: arxiv.research

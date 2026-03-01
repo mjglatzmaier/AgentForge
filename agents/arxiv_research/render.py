@@ -67,6 +67,13 @@ def _validate_highlight_citations(digest: ResearchDigest) -> None:
 
 
 def _render_markdown_report(digest: ResearchDigest) -> str:
+    # Build lookup: paper_id -> list of highlight texts
+    highlights_by_paper: dict[str, list[str]] = {}
+
+    for highlight in digest.highlights or []:
+        for paper_id in highlight.cited_paper_ids:
+            highlights_by_paper.setdefault(paper_id, []).append(highlight.text)
+
     lines = [
         "# ArXiv Research Report",
         "",
@@ -75,20 +82,24 @@ def _render_markdown_report(digest: ResearchDigest) -> str:
         "",
         "## Papers",
         "",
-        "| paper_id | title | published | categories |",
-        "| --- | --- | --- | --- |",
+        "| paper_id | title | published | categories | highlights |",
+        "| --- | --- | --- | --- | --- |",
     ]
 
     for paper in digest.papers:
         categories = ", ".join(paper.categories)
-        lines.append(f"| `{paper.paper_id}` | {paper.title} | {paper.published} | {categories} |")
 
-    lines.extend(["", "## Highlights", ""])
-    if not digest.highlights:
-        lines.append("- No highlights.")
-    else:
-        for highlight in digest.highlights:
-            citations = ", ".join(f"`{paper_id}`" for paper_id in highlight.cited_paper_ids)
-            lines.append(f"- {highlight.text} ({citations})")
+        paper_highlights = highlights_by_paper.get(paper.paper_id, [])
+        if paper_highlights:
+            formatted_highlights = "<br>".join(
+                f"- {text}" for text in paper_highlights
+            )
+        else:
+            formatted_highlights = "—"
+
+        lines.append(
+            f"| `{paper.paper_id}` | {paper.title} | {paper.published} | "
+            f"{categories} | {formatted_highlights} |"
+        )
 
     return "\n".join(lines) + "\n"

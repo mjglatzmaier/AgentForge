@@ -1,4 +1,4 @@
-plan_id: arxiv-digest-demo-v1
+plan_id: arxiv-llm-theory-v1
 max_parallel: 2
 policy_snapshot: {}
 trigger:
@@ -12,10 +12,21 @@ nodes:
     metadata:
       config:
         mode: live
-        query: "(agent OR tool use OR planning) AND (cat:cs.AI OR cat:cs.LG)"
-        categories: [cs.AI, cs.LG, cs.CL]
-        max_results: 25
+        query: >
+          ("large language model" OR LLM OR transformer) AND
+          ("scaling laws" OR scaling OR finetuning OR "parameter-efficient tuning" OR trend OR benchmark OR physics)
+        categories: [cs.CL, cs.LG, cs.AI, stat.ML]
+        max_results: 40
         sort_by: relevance
+        ranking:
+          factors: [topic_alignment, citations, credibility, engagement, recency, methodological_rigor]
+          weights:
+            topic_alignment: 0.35
+            citations: 0.2
+            credibility: 0.15
+            engagement: 0.1
+            recency: 0.1
+            methodological_rigor: 0.1
 
   - node_id: synthesize_digest
     agent_id: arxiv.research
