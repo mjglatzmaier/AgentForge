@@ -186,6 +186,11 @@ nodes:
       config:
         mode: replay
         provider: openai
+        max_output_tokens: 200
+        max_highlights: 2
+        abstract_snippet_chars: 140
+        max_input_tokens_est: 350
+        reserved_output_tokens: 0
 
   - node_id: render_report
     agent_id: arxiv.research
@@ -327,6 +332,14 @@ def test_cli_scorer_dispatch_and_status_are_deterministic_and_artifact_safe(
     status_payload = json.loads(capsys.readouterr().out.strip())
     assert status_payload["status"] == "terminal"
     assert status_payload["node_summary"] == {"succeeded": 4}
+    synth_diag_a = json.loads(
+        (
+            run_dir_a / "steps" / "02_synthesize_digest" / "outputs" / "synthesis_diagnostics.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert synth_diag_a["status"] == "success"
+    assert synth_diag_a["est_prompt_tokens"] <= 350
+    assert synth_diag_a["retry_outcome"] in {"not_needed", "recovered"}
 
 
 def test_cli_scorer_resume_completes_interrupted_run(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
@@ -355,3 +368,10 @@ def test_cli_scorer_resume_completes_interrupted_run(tmp_path: Path, monkeypatch
     names = [artifact["name"] for artifact in manifest_payload["artifacts"]]
     assert len(names) == len(set(names))
     assert {"papers_selected", "scoring_diagnostics", "digest_json", "report_md"} <= set(names)
+    synth_diag = json.loads(
+        (
+            run_dir / "steps" / "02_synthesize_digest" / "outputs" / "synthesis_diagnostics.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert synth_diag["status"] == "success"
+    assert synth_diag["est_prompt_tokens"] <= 350

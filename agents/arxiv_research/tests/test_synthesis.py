@@ -189,6 +189,7 @@ def test_synthesize_digest_uses_provider_and_writes_output(
     call = provider.calls[0]
     assert call["response_model"] is SynthesisHighlights
     assert "Summarize key contributions" in call["prompt"]
+    assert "Produce max of 5 concise bullet highlights" in call["prompt"]
     assert "Input compressed papers JSON" in call["prompt"]
     assert "cited_paper_ids" in call["prompt"]
     assert '"abstract_snippet"' in call["prompt"]
@@ -320,6 +321,30 @@ def test_synthesize_digest_uses_config_query_when_llm_query_is_missing(
 
     output_payload = json.loads((tmp_path / "outputs" / "digest.json").read_text(encoding="utf-8"))
     assert output_payload["query"] == "fallback query"
+
+
+def test_synthesize_digest_applies_max_highlights_prompt_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    highlights = SynthesisHighlights(
+        query="agent systems",
+        highlights=[DigestBullet(text="Cap citation", cited_paper_ids=["2401.00001v1"])],
+    )
+    provider = _ProviderStub(highlights)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
+
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay", "max_highlights": 2},
+        }
+    )
+
+    assert provider.calls
+    assert "Produce max of 2 concise bullet highlights" in str(provider.calls[0]["prompt"])
 
 
 def test_replay_mode_produces_identical_digest_for_same_snapshot_inputs(

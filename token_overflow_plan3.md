@@ -132,9 +132,9 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 - [X] O3.3 Emit applied limits and retry outcome in diagnostics.
 
 ### Phase O4 — Regression & Smoke
-- [ ] O4.1 Update synthesis tests for compact contract.
-- [ ] O4.2 Add replay integration test with larger selected set and forced small output caps.
-- [ ] O4.3 Add CLI scorer smoke assertion that synthesis succeeds with scorer-enabled plans under conservative caps.
+- [X] O4.1 Update synthesis tests for compact contract.
+- [X] O4.2 Add replay integration test with larger selected set and forced small output caps.
+- [X] O4.3 Add CLI scorer smoke assertion that synthesis succeeds with scorer-enabled plans under conservative caps.
 
 ---
 
