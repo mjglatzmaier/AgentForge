@@ -291,7 +291,7 @@ Acceptance criteria:
 - [X] 4.3 Failure semantics:
   - node failure blocks downstream unless retry policy allows
   - transient retries only when declared; never infinite
-- [ ] 4.4 Control-plane persistence:
+- [X] 4.4 Control-plane persistence:
   - write events for node transitions
   - persist final control snapshot
 
