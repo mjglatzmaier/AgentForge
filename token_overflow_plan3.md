@@ -127,9 +127,9 @@ Record truncation signals in `outputs/synthesis_diagnostics.json`:
 - [X] O2.3 Add unit tests for compression bounds and determinism.
 
 ### Phase O3 — Budget + Retry
-- [ ] O3.1 Add deterministic prompt budget estimator/reducer.
-- [ ] O3.2 Add one retry for overflow-like parse/validation failures.
-- [ ] O3.3 Emit applied limits and retry outcome in diagnostics.
+- [X] O3.1 Add deterministic prompt budget estimator/reducer.
+- [X] O3.2 Add one retry for overflow-like parse/validation failures.
+- [X] O3.3 Emit applied limits and retry outcome in diagnostics.
 
 ### Phase O4 — Regression & Smoke
 - [ ] O4.1 Update synthesis tests for compact contract.

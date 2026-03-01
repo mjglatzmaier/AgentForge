@@ -50,9 +50,29 @@ class _ProviderStub:
 class _FailingProviderStub:
     def __init__(self, error: Exception) -> None:
         self.error = error
+        self.calls = 0
 
     def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
+        self.calls += 1
         raise self.error
+
+
+class _RetryProviderStub:
+    def __init__(self, *, failure_error: Exception, success_payload: SynthesisHighlights) -> None:
+        self.failure_error = failure_error
+        self.success_payload = success_payload
+        self.calls: list[dict[str, Any]] = []
+
+    def generate_json(self, **kwargs: Any) -> LlmResult[SynthesisHighlights]:
+        self.calls.append(dict(kwargs))
+        if len(self.calls) == 1:
+            raise self.failure_error
+        return LlmResult(
+            parsed=self.success_payload,
+            raw_text=self.success_payload.model_dump_json(),
+            provider="stub",
+            model=str(kwargs.get("model", "stub-model")),
+        )
 
 
 def test_synthesize_digest_prefers_selected_input_when_available(
@@ -161,6 +181,10 @@ def test_synthesize_digest_uses_provider_and_writes_output(
     assert diagnostics_payload["error"] is None
     assert diagnostics_payload["prompt_chars"] > 0
     assert diagnostics_payload["est_prompt_tokens"] > 0
+    assert diagnostics_payload["retry_count"] == 0
+    assert diagnostics_payload["retry_outcome"] == "not_needed"
+    assert diagnostics_payload["applied_limits"]["max_highlights"] == 5
+    assert diagnostics_payload["applied_limits"]["paper_limit"] == 2
     assert provider.calls
     call = provider.calls[0]
     assert call["response_model"] is SynthesisHighlights
@@ -201,7 +225,8 @@ def test_synthesize_digest_rejects_unknown_cited_paper_ids(
         query="agent systems",
         highlights=[DigestBullet(text="Bad citation", cited_paper_ids=["unknown-id"])],
     )
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _ProviderStub(highlights))
+    provider = _ProviderStub(highlights)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     with pytest.raises(ProviderValidationError, match="unknown cited_paper_ids"):
         synthesis.synthesize_digest(
@@ -211,6 +236,7 @@ def test_synthesize_digest_rejects_unknown_cited_paper_ids(
                 "config": {"mode": "live"},
             }
         )
+    assert len(provider.calls) == 1
 
 
 def test_synthesize_digest_replay_mode_uses_deterministic_settings(
@@ -249,7 +275,8 @@ def test_synthesize_digest_writes_failure_diagnostics_on_provider_validation_err
         "openai response failed schema validation; raw excerpt: {\"highlights\": [}. "
         "finish_reason=length. tail_excerpt={\"highlights\": [}"
     )
-    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: _FailingProviderStub(error))
+    provider = _FailingProviderStub(error)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
 
     with pytest.raises(ProviderValidationError, match="finish_reason=length"):
         synthesis.synthesize_digest(
@@ -266,7 +293,10 @@ def test_synthesize_digest_writes_failure_diagnostics_on_provider_validation_err
     assert diagnostics_payload["status"] == "failed"
     assert diagnostics_payload["finish_reason"] == "length"
     assert diagnostics_payload["overflow_detected"] is True
+    assert diagnostics_payload["retry_count"] == 1
+    assert diagnostics_payload["retry_outcome"] == "exhausted"
     assert "finish_reason=length" in diagnostics_payload["error"]
+    assert provider.calls == 2
 
 
 def test_synthesize_digest_uses_config_query_when_llm_query_is_missing(
@@ -353,6 +383,7 @@ def test_compress_papers_for_prompt_enforces_bounds_and_fields() -> None:
         papers,
         title_max_chars=10,
         abstract_snippet_chars=30,
+        paper_limit=10,
     )
 
     assert [item["paper_id"] for item in compressed] == ["a-paper", "b-paper"]
@@ -374,10 +405,80 @@ def test_compress_papers_for_prompt_is_deterministic() -> None:
         papers,
         title_max_chars=180,
         abstract_snippet_chars=600,
+        paper_limit=10,
     )
     second = synthesis._compress_papers_for_prompt(
         list(reversed(papers)),
         title_max_chars=180,
         abstract_snippet_chars=600,
+        paper_limit=10,
     )
     assert first == second
+
+
+def test_synthesize_digest_applies_budget_limits_deterministically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _papers_payload()
+    payload[0]["abstract"] = "A" * 4000
+    payload[1]["abstract"] = "B" * 4000
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(payload), encoding="utf-8")
+    highlights = SynthesisHighlights(
+        query="agent systems",
+        highlights=[DigestBullet(text="Budget citation", cited_paper_ids=["2401.00001v1"])],
+    )
+    provider = _ProviderStub(highlights)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
+
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {
+                "mode": "replay",
+                "max_input_tokens_est": 300,
+                "reserved_output_tokens": 0,
+            },
+        }
+    )
+
+    diagnostics_payload = json.loads(
+        (tmp_path / "outputs" / "synthesis_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert diagnostics_payload["applied_limits"]["abstract_snippet_chars"] < 600
+    assert diagnostics_payload["est_prompt_tokens"] <= 300
+
+
+def test_synthesize_digest_retries_once_for_overflow_like_validation_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    provider = _RetryProviderStub(
+        failure_error=ProviderValidationError("schema failure. finish_reason=length. tail_excerpt={"),
+        success_payload=SynthesisHighlights(
+            query="agent systems",
+            highlights=[DigestBullet(text="Recovered citation", cited_paper_ids=["2401.00001v1"])],
+        ),
+    )
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
+
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(tmp_path),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay"},
+        }
+    )
+
+    diagnostics_payload = json.loads(
+        (tmp_path / "outputs" / "synthesis_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert len(provider.calls) == 2
+    assert diagnostics_payload["status"] == "success"
+    assert diagnostics_payload["retry_count"] == 1
+    assert diagnostics_payload["retry_outcome"] == "recovered"
+    first_prompt = str(provider.calls[0]["prompt"])
+    second_prompt = str(provider.calls[1]["prompt"])
+    assert first_prompt != second_prompt
