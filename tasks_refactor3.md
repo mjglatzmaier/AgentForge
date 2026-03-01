@@ -308,7 +308,7 @@ Acceptance criteria:
   - `agentforge dispatch --agent <agent_id> --request <request.json>`
   - `agentforge resume --run_id <id>`
   - `agentforge status --run_id <id>`
-- [ ] 5.2 Triggers:
+- [X] 5.2 Triggers:
   - `TriggerSpec.kind=manual` for CLI runs
   - `TriggerSpec.kind=schedule` for cron-driven runs (OS cron calls CLI)
   - `TriggerSpec.kind=event` for webhook/manual event triggers
