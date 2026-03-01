@@ -264,7 +264,7 @@ Acceptance criteria:
   - `PythonRuntimeAdapter` (module:function entrypoint)
   - `CommandRuntimeAdapter` (command template; Node/npm supported)
   - `ContainerRuntimeAdapter` (stub)
-- [ ] 3.3 Define and enforce operations_policy semantics (guardrails):
+- [X] 3.3 Define and enforce operations_policy semantics (guardrails):
   - command allowlist checks
   - fs_scope allowlist checks
   - network allowlist best-effort checks

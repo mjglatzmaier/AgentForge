@@ -93,14 +93,14 @@ You are working in the AgentForge repository.
 Use model: GPT-5.3-Codex.
 
 Task:
-Complete EXACTLY the following task ID: [Phase 3 (3.2)]
+Complete EXACTLY the following task ID: [Phase 3 (3.3)]
 Source of truth file: tasks_refactor3.md (use what the task references).
 Do NOT implement anything beyond this task.
 
 Constraints (must follow):
 - Keep changes minimal and aligned with docs/architecture.md and .github/copilot-instructions.md.
 - Do NOT introduce heavy frameworks (LangChain/LlamaIndex/etc.).
-- Use Python 3.21+, type hints, and Pydantic for structured data.
+- Use Python 3.31+, type hints, and Pydantic for structured data.
 - Agents communicate ONLY via manifest-indexed artifacts (no hardcoded filesystem coupling).
 - No global state.
 - All changes must include unit tests (pytest). If a change is trivial, add at least one regression test.
@@ -122,4 +122,4 @@ D) Suggested Conventional Commit message (title + body).
 E) Exact checkbox lines (copy/paste) that should be marked complete in the source task file.
 F) Whether docs/architecture.md or .github/copilot-instructions.md require updates (yes/no + why).
 
-Now implement [Phase 3 (3.2)].
+Now implement [Phase 3 (3.3)].

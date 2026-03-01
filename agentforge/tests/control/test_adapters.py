@@ -11,7 +11,9 @@ from agentforge.control.adapters import (
 from agentforge.contracts.models import ExecutionRequest, ExecutionStatus
 
 
-def _request(*, metadata: dict[str, object], runtime: str) -> ExecutionRequest:
+def _request(
+    *, metadata: dict[str, object], runtime: str, policy_snapshot: dict[str, object] | None = None
+) -> ExecutionRequest:
     return ExecutionRequest(
         run_id="run-001",
         node_id="node-1",
@@ -20,6 +22,7 @@ def _request(*, metadata: dict[str, object], runtime: str) -> ExecutionRequest:
         runtime=runtime,
         inputs=["request_json"],
         timeout_s=10,
+        policy_snapshot=dict(policy_snapshot or {}),
         metadata=metadata,
     )
 
@@ -80,6 +83,79 @@ def test_command_runtime_adapter_returns_failed_on_nonzero_exit() -> None:
 
     assert result.status is ExecutionStatus.FAILED
     assert result.metrics["returncode"] == 3
+
+
+def test_command_runtime_adapter_enforces_allowed_commands() -> None:
+    adapter = CommandRuntimeAdapter()
+    request = _request(
+        runtime="command",
+        metadata={
+            "command": ["python-not-allowed", "-c", "print('x')"],
+            "cwd": str(Path.cwd()),
+        },
+        policy_snapshot={
+            "terminal_access": "restricted",
+            "allowed_commands": [sys.executable],
+            "fs_scope": [str(Path.cwd())],
+            "network_access": "none",
+            "network_allowlist": [],
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "not allowed" in result.error
+
+
+def test_command_runtime_adapter_enforces_fs_scope() -> None:
+    adapter = CommandRuntimeAdapter()
+    request = _request(
+        runtime="command",
+        metadata={
+            "command": [sys.executable, "-c", "print('x')"],
+            "cwd": str(Path.cwd()),
+        },
+        policy_snapshot={
+            "terminal_access": "restricted",
+            "allowed_commands": [sys.executable],
+            "fs_scope": [str(Path.cwd().parent / "outside_scope_dir")],
+            "network_access": "none",
+            "network_allowlist": [],
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "outside operations_policy.fs_scope" in result.error
+
+
+def test_python_runtime_adapter_enforces_network_allowlist() -> None:
+    adapter = PythonRuntimeAdapter()
+    request = _request(
+        runtime="python",
+        metadata={
+            "entrypoint": "agentforge.tests.control.test_adapters:_python_entrypoint_ok",
+            "cwd": str(Path.cwd()),
+            "network_targets": ["blocked.example"],
+        },
+        policy_snapshot={
+            "terminal_access": "none",
+            "allowed_commands": [],
+            "fs_scope": [str(Path.cwd())],
+            "network_access": "allowlist",
+            "network_allowlist": ["allowed.example"],
+        },
+    )
+
+    result = adapter.execute(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "not allowed" in result.error
 
 
 def test_container_runtime_adapter_is_stub() -> None:

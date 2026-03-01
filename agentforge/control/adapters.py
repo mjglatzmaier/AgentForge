@@ -7,11 +7,15 @@ from importlib import import_module
 from time import perf_counter
 from typing import Any, Callable
 import subprocess
+from pathlib import Path
 
 from agentforge.contracts.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
+    NetworkAccess,
+    OperationsPolicy,
+    TerminalAccess,
 )
 
 
@@ -34,6 +38,7 @@ class PythonRuntimeAdapter(RuntimeAdapter):
     def execute(self, request: ExecutionRequest) -> ExecutionResult:
         started = perf_counter()
         try:
+            _enforce_policy(request, command=None)
             entrypoint = _required_metadata_string(request, "entrypoint")
             target = _resolve_entrypoint(entrypoint)
             payload = target(request)
@@ -61,6 +66,7 @@ class CommandRuntimeAdapter(RuntimeAdapter):
         started = perf_counter()
         try:
             command = _required_command(request)
+            _enforce_policy(request, command=command)
             cwd = request.metadata.get("cwd")
             cwd_path = str(cwd).strip() if isinstance(cwd, str) and cwd.strip() else None
             completed = subprocess.run(
@@ -164,3 +170,87 @@ def _coerce_execution_result(payload: Any, *, adapter: str, version: str) -> Exe
     payload_with_defaults.setdefault("adapter", adapter)
     payload_with_defaults.setdefault("adapter_version", version)
     return ExecutionResult.model_validate(payload_with_defaults)
+
+
+def _enforce_policy(request: ExecutionRequest, *, command: list[str] | None) -> None:
+    if not request.policy_snapshot:
+        return
+
+    policy = OperationsPolicy.model_validate(request.policy_snapshot)
+    _enforce_terminal_policy(policy, command=command)
+    _enforce_fs_scope(policy, request=request)
+    _enforce_network_policy(policy, request=request)
+
+
+def _enforce_terminal_policy(policy: OperationsPolicy, *, command: list[str] | None) -> None:
+    if command is None:
+        return
+
+    if policy.terminal_access is TerminalAccess.NONE:
+        raise ValueError("Terminal execution is disallowed by operations_policy.")
+
+    if policy.allowed_commands:
+        executable = command[0]
+        if executable not in policy.allowed_commands:
+            raise ValueError(
+                f"Command '{executable}' is not allowed by operations_policy.allowed_commands."
+            )
+
+
+def _enforce_fs_scope(policy: OperationsPolicy, *, request: ExecutionRequest) -> None:
+    if not policy.fs_scope:
+        return
+
+    cwd = request.metadata.get("cwd")
+    if not isinstance(cwd, str) or not cwd.strip():
+        raise ValueError("ExecutionRequest metadata.cwd is required when operations_policy.fs_scope is set.")
+    cwd_path = Path(cwd).resolve()
+
+    allowed = False
+    for scope in policy.fs_scope:
+        scope_path = Path(scope)
+        if not scope_path.is_absolute():
+            scope_path = (Path.cwd() / scope_path).resolve()
+        else:
+            scope_path = scope_path.resolve()
+        if _is_within(cwd_path, scope_path):
+            allowed = True
+            break
+    if not allowed:
+        raise ValueError(f"cwd '{cwd_path}' is outside operations_policy.fs_scope.")
+
+
+def _enforce_network_policy(policy: OperationsPolicy, *, request: ExecutionRequest) -> None:
+    targets_raw = request.metadata.get("network_targets")
+    if targets_raw is None:
+        return
+    if not isinstance(targets_raw, list):
+        raise ValueError("ExecutionRequest metadata.network_targets must be a list of host strings.")
+
+    targets: list[str] = []
+    for item in targets_raw:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("ExecutionRequest metadata.network_targets entries must be non-empty strings.")
+        targets.append(item.strip())
+
+    if not targets:
+        return
+
+    if policy.network_access is NetworkAccess.NONE:
+        raise ValueError("Network access is disallowed by operations_policy.")
+
+    allowlist = set(policy.network_allowlist)
+    disallowed = [target for target in targets if target not in allowlist]
+    if disallowed:
+        raise ValueError(
+            "Network target(s) not allowed by operations_policy.network_allowlist: "
+            + ", ".join(disallowed)
+        )
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
