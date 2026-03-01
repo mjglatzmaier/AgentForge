@@ -591,7 +591,7 @@ Acceptance criteria:
     - `run(request: ExecutionRequest) -> ExecutionResult`
   - operation dispatch strictly by `request.operation`
   - plugin I/O strictly through manifest-indexed artifacts (no direct coupling)
-- [ ] 8a.2 Extend/confirm `AgentSpec` plugin metadata fields:
+- [X] 8a.2 Extend/confirm `AgentSpec` plugin metadata fields:
   - `runtime.type` (v1: `python_subprocess`; future: `container`)
   - runtime entrypoint reference for Python plugins
   - operation capability metadata (`capabilities.operations`) with expected input/output artifact names

@@ -117,6 +117,13 @@ def test_arxiv_research_agentspec_validates_under_registry() -> None:
 
     assert spec is not None
     assert spec.version == "1.0.0"
+    assert spec.runtime.type is not None
+    assert spec.runtime.type.value == "python_subprocess"
     assert spec.runtime.entrypoint == "agents.arxiv_research.entrypoint:run"
     assert spec.runtime.max_concurrency == 2
+    assert [operation.name for operation in spec.capabilities.operations] == [
+        "fetch_and_snapshot",
+        "synthesize_digest",
+        "render_report",
+    ]
     assert spec.operations_policy.network_allowlist == ["export.arxiv.org"]

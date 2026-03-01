@@ -12,9 +12,29 @@ output_contracts:
   - report.md
 runtime:
   runtime: python
+  type: python_subprocess
   entrypoint: agents.arxiv_research.entrypoint:run
   timeout_s: 120
   max_concurrency: 2
+capabilities:
+  operations:
+    - name: fetch_and_snapshot
+      inputs:
+        - request_json
+      outputs:
+        - raw_feed_snapshot
+        - papers_raw
+    - name: synthesize_digest
+      inputs:
+        - papers_raw
+      outputs:
+        - digest_json
+    - name: render_report
+      inputs:
+        - digest_json
+      outputs:
+        - report_md
+        - sources_json
 operations_policy:
   terminal_access: none
   allowed_commands: []
