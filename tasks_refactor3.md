@@ -524,7 +524,7 @@ Acceptance criteria:
 - Clear, minimal code.
 - No hard-coded secrets.
 - LLM provider mocked in tests.
-- Example README under `agents/arxiv_research/README.md` explaining:
+- [X] Example README under `agents/arxiv_research/README.md` explaining:
   - determinism boundary
   - replay mode
   - how to extend agent
