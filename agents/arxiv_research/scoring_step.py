@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,8 @@ def score_papers(ctx: dict[str, Any]) -> dict[str, Any]:
         config=config,
         mode=mode,
     )
-    feature_scores = compute_feature_scores(papers, config)
+    now_utc = datetime(2026, 1, 1, tzinfo=timezone.utc) if mode == "replay" else None
+    feature_scores = compute_feature_scores(papers, config, now_utc=now_utc)
     scored, diagnostics = aggregate_scored_papers(
         papers=papers,
         feature_scores=feature_scores,

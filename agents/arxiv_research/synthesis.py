@@ -26,8 +26,6 @@ def synthesize_digest(ctx: dict[str, Any]) -> dict[str, Any]:
     papers = _load_synthesis_papers(ctx)
     prompt = _build_synthesis_prompt(papers)
     settings = _synthesis_settings(ctx)
-    for key, value in settings.items():
-        print(f"Synthesis setting: {key} = {value}")
     provider = _resolve_provider(ctx)
 
     result: LlmResult[ResearchDigest] = provider.generate_json(
@@ -74,7 +72,7 @@ def _build_synthesis_prompt(papers: list[ResearchPaper]) -> str:
     return (
         "Summarize key contributions from the provided papers.\n"
         "Produce max of 5 concise bullet highlights for the most important findings. Max 100 words per highlight, use clear, high-level language.\n"
-        #"Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
+        "Every highlight MUST include cited_paper_ids with one or more paper_id values from the input.\n"
         "Input papers JSON:\n"
         f"{papers_json}"
     )
@@ -122,7 +120,13 @@ def _load_papers_input(ctx: dict[str, Any], artifact_name: str) -> list[Research
     payload = json.loads(Path(artifact["abs_path"]).read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise TypeError(f"Input artifact '{artifact_name}' must contain a JSON list.")
-    return [ResearchPaper.model_validate(item) for item in payload]
+    normalized_payload: list[dict[str, Any]] = []
+    for item in payload:
+        if isinstance(item, dict) and isinstance(item.get("paper"), dict):
+            normalized_payload.append(dict(item["paper"]))
+        else:
+            normalized_payload.append(item)
+    return [ResearchPaper.model_validate(item) for item in normalized_payload]
 
 
 def _load_synthesis_papers(ctx: dict[str, Any]) -> list[ResearchPaper]:

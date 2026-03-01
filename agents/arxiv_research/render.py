@@ -102,4 +102,9 @@ def _render_markdown_report(digest: ResearchDigest) -> str:
             f"{categories} | {formatted_highlights} |"
         )
 
+    lines.extend(["", "## Highlights", ""])
+    for highlight in digest.highlights:
+        cited = ", ".join(f"`{paper_id}`" for paper_id in highlight.cited_paper_ids)
+        lines.append(f"- {highlight.text} ({cited})")
+
     return "\n".join(lines) + "\n"

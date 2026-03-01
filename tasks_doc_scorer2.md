@@ -219,20 +219,20 @@ Acceptance:
 ---
 
 ### Phase S7 — Test Matrix + Regression Gates
-- [ ] S7.1 Unit tests (`agents/arxiv_research/tests/test_scoring_*.py`):
+- [X] S7.1 Unit tests (`agents/arxiv_research/tests/test_scoring_*.py`):
   - config validation
   - feature calculations
   - aggregation math
   - ordering stability
-- [ ] S7.2 Entry-point tests:
+- [X] S7.2 Entry-point tests:
   - operation routing
   - required input enforcement
   - output artifact contract
-- [ ] S7.3 Integration tests:
+- [X] S7.3 Integration tests:
   - replay fixture with larger candidate set
   - no duplicate manifest artifacts
   - deterministic output across repeated runs
-- [ ] S7.4 CLI smoke tests:
+- [X] S7.4 CLI smoke tests:
   - dispatch/status/resume on scorer-enabled plan
 
 Acceptance:
