@@ -607,7 +607,7 @@ Acceptance criteria:
     - `synthesize_digest`
     - `render_report`
     - optional `local_write_delivery` stub (explicitly optional)
-- [ ] 8b.2 Bridge operation outputs to `ExecutionResult`:
+- [X] 8b.2 Bridge operation outputs to `ExecutionResult`:
   - map operation outputs to `produced_artifacts` with validated relative `outputs/...` paths
   - preserve explicit metrics/error fields
   - do not register partial outputs on failed operations (unless explicitly documented)

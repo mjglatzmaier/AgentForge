@@ -1,43 +1,47 @@
 from __future__ import annotations
 
+import re
+from pathlib import PurePosixPath
 from pathlib import Path
 from typing import Any
 
 from agentforge.control.plugin_contract import dispatch_plugin_operation
 from agentforge.contracts.models import ArtifactRef, ExecutionRequest, ExecutionResult, ExecutionStatus
+from agentforge.storage.hashing import sha256_file
 from agents.arxiv_research.ingest import fetch_and_snapshot
 from agents.arxiv_research.render import render_report
 from agents.arxiv_research.synthesis import synthesize_digest
 
 _ADAPTER = "arxiv-plugin"
 _ADAPTER_VERSION = "1"
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
 
 def run(request: ExecutionRequest) -> ExecutionResult:
-    return dispatch_plugin_operation(
-        request,
-        operations={
-            "fetch_and_snapshot": _run_fetch_and_snapshot,
-            "synthesize_digest": _run_synthesize_digest,
-            "render_report": _run_render_report,
-            "local_write_delivery": _run_local_write_delivery,
-        },
-    )
+    try:
+        return dispatch_plugin_operation(
+            request,
+            operations={
+                "fetch_and_snapshot": _run_fetch_and_snapshot,
+                "synthesize_digest": _run_synthesize_digest,
+                "render_report": _run_render_report,
+                "local_write_delivery": _run_local_write_delivery,
+            },
+        )
+    except Exception as exc:
+        return _failure_result(error=str(exc), traceback_excerpt=type(exc).__name__)
 
 
 def _run_fetch_and_snapshot(request: ExecutionRequest) -> ExecutionResult:
-    payload = fetch_and_snapshot(_request_context(request))
-    return _success_result(payload)
+    return _execute_step_operation(request, fetch_and_snapshot)
 
 
 def _run_synthesize_digest(request: ExecutionRequest) -> ExecutionResult:
-    payload = synthesize_digest(_request_context(request))
-    return _success_result(payload)
+    return _execute_step_operation(request, synthesize_digest)
 
 
 def _run_render_report(request: ExecutionRequest) -> ExecutionResult:
-    payload = render_report(_request_context(request))
-    return _success_result(payload)
+    return _execute_step_operation(request, render_report)
 
 
 def _run_local_write_delivery(request: ExecutionRequest) -> ExecutionResult:
@@ -47,6 +51,46 @@ def _run_local_write_delivery(request: ExecutionRequest) -> ExecutionResult:
     return ExecutionResult(
         status=ExecutionStatus.SUCCESS,
         metrics={"delivery": "stub"},
+        adapter=_ADAPTER,
+        adapter_version=_ADAPTER_VERSION,
+    )
+
+
+def _execute_step_operation(
+    request: ExecutionRequest, operation: Any
+) -> ExecutionResult:
+    try:
+        payload = operation(_request_context(request))
+    except Exception as exc:
+        return _failure_result(error=str(exc), traceback_excerpt=type(exc).__name__)
+
+    if not isinstance(payload, dict):
+        raise TypeError("Operation payload must be a mapping.")
+
+    metrics = payload.get("metrics", {})
+    if not isinstance(metrics, dict):
+        raise TypeError("Step payload metrics must be a mapping.")
+
+    status = str(payload.get("status", "success")).strip().lower()
+    if status == ExecutionStatus.FAILED.value:
+        error = payload.get("error")
+        error_text = str(error).strip() if error is not None else "Operation failed."
+        return _failure_result(error=error_text, metrics=metrics)
+    if status != ExecutionStatus.SUCCESS.value:
+        raise ValueError(f"Unsupported operation payload status: {status}")
+
+    outputs = payload.get("outputs", [])
+    if not isinstance(outputs, list):
+        raise TypeError("Step payload outputs must be a list.")
+
+    produced_artifacts = _build_produced_artifacts(
+        request=request,
+        outputs=outputs,
+    )
+    return ExecutionResult(
+        status=ExecutionStatus.SUCCESS,
+        produced_artifacts=produced_artifacts,
+        metrics=metrics,
         adapter=_ADAPTER,
         adapter_version=_ADAPTER_VERSION,
     )
@@ -89,13 +133,65 @@ def _context_inputs(*, request: ExecutionRequest, run_dir: Path) -> dict[str, di
     return resolved
 
 
-def _success_result(step_payload: dict[str, Any]) -> ExecutionResult:
-    metrics = step_payload.get("metrics", {})
-    if not isinstance(metrics, dict):
-        raise TypeError("Step payload metrics must be a mapping.")
+def _build_produced_artifacts(
+    *,
+    request: ExecutionRequest,
+    outputs: list[dict[str, Any]],
+) -> list[ArtifactRef]:
+    step_dir = Path(_required_metadata_str(request, "step_dir"))
+    produced: list[ArtifactRef] = []
+    for output in outputs:
+        if not isinstance(output, dict):
+            raise TypeError("Each output entry must be a mapping.")
+        name = _required_output_field(output, "name")
+        artifact_type = _required_output_field(output, "type")
+        normalized_path = _normalize_output_path(_required_output_field(output, "path"))
+        file_path = step_dir / normalized_path
+        if not file_path.is_file():
+            raise ValueError(f"Output artifact file does not exist: {normalized_path}")
+        produced.append(
+            ArtifactRef(
+                name=name,
+                type=artifact_type,
+                path=normalized_path,
+                sha256=sha256_file(file_path),
+                producer_step_id=request.node_id,
+            )
+        )
+    return produced
+
+
+def _required_output_field(output: dict[str, Any], key: str) -> str:
+    value = output.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise TypeError(f"Output field '{key}' must be a non-empty string.")
+    return value.strip()
+
+
+def _normalize_output_path(path: str) -> str:
+    normalized = path.replace("\\", "/").strip()
+    if normalized.startswith("/") or _WINDOWS_DRIVE_PREFIX.match(normalized):
+        raise ValueError("Output artifact path must be relative.")
+    posix = PurePosixPath(normalized)
+    if ".." in posix.parts:
+        raise ValueError("Output artifact path must not contain '..'.")
+    if not normalized.startswith("outputs/"):
+        raise ValueError("Output artifact path must start with 'outputs/'.")
+    return posix.as_posix()
+
+
+def _failure_result(
+    *,
+    error: str,
+    traceback_excerpt: str | None = None,
+    metrics: dict[str, Any] | None = None,
+) -> ExecutionResult:
     return ExecutionResult(
-        status=ExecutionStatus.SUCCESS,
-        metrics=metrics,
+        status=ExecutionStatus.FAILED,
+        produced_artifacts=[],
+        metrics=dict(metrics or {}),
+        error=error,
+        traceback_excerpt=traceback_excerpt,
         adapter=_ADAPTER,
         adapter_version=_ADAPTER_VERSION,
     )

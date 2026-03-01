@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +49,14 @@ def test_run_dispatches_fetch_and_snapshot(tmp_path: Path, monkeypatch: pytest.M
 
     def _stub(ctx: dict[str, Any]) -> dict[str, Any]:
         called["ctx"] = ctx
-        return {"outputs": [], "metrics": {"count": 2}}
+        outputs_dir = Path(ctx["step_dir"]) / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        out_path = outputs_dir / "raw_feed.xml"
+        out_path.write_text("<feed />", encoding="utf-8")
+        return {
+            "outputs": [{"name": "raw_feed_xml", "type": "xml", "path": "outputs/raw_feed.xml"}],
+            "metrics": {"count": 2},
+        }
 
     monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
     request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
@@ -58,6 +66,12 @@ def test_run_dispatches_fetch_and_snapshot(tmp_path: Path, monkeypatch: pytest.M
     assert result.status is ExecutionStatus.SUCCESS
     assert result.metrics["count"] == 2
     assert called["ctx"]["step_id"] == "node-1"
+    assert len(result.produced_artifacts) == 1
+    artifact = result.produced_artifacts[0]
+    assert artifact.name == "raw_feed_xml"
+    assert artifact.path == "outputs/raw_feed.xml"
+    assert artifact.producer_step_id == "node-1"
+    assert len(artifact.sha256) == 64
 
 
 def test_run_dispatches_synthesize_digest_with_resolved_input_paths(
@@ -92,12 +106,12 @@ def test_run_dispatches_synthesize_digest_with_resolved_input_paths(
 def test_run_dispatches_render_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     digest_path = tmp_path / "steps" / "01_prior" / "outputs" / "digest.json"
     digest_path.parent.mkdir(parents=True, exist_ok=True)
-    digest_path.write_text("{}", encoding="utf-8")
+    digest_path.write_text(json.dumps({"query": "q", "generated_at_utc": "2026-01-01T00:00:00Z", "papers": [], "highlights": []}), encoding="utf-8")
 
     monkeypatch.setattr(
         entrypoint,
         "render_report",
-        lambda _ctx: {"outputs": [], "metrics": {"highlights": 0}},
+        lambda ctx: _render_stub(ctx),
     )
     request = _request(
         tmp_path=tmp_path,
@@ -114,6 +128,11 @@ def test_run_dispatches_render_report(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert result.status is ExecutionStatus.SUCCESS
     assert result.metrics["highlights"] == 0
+    assert {artifact.name for artifact in result.produced_artifacts} == {
+        "digest_json",
+        "report_md",
+        "sources_json",
+    }
 
 
 def test_run_supports_local_write_delivery_stub(tmp_path: Path) -> None:
@@ -128,5 +147,60 @@ def test_run_supports_local_write_delivery_stub(tmp_path: Path) -> None:
 
 def test_run_rejects_unknown_operation(tmp_path: Path) -> None:
     request = _request(tmp_path=tmp_path, operation="unknown_operation")
-    with pytest.raises(ValueError, match="Unsupported plugin operation"):
-        entrypoint.run(request)
+    result = entrypoint.run(request)
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "Unsupported plugin operation" in result.error
+    assert result.produced_artifacts == []
+
+
+def test_run_returns_failed_without_partial_outputs_when_operation_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _stub(ctx: dict[str, Any]) -> dict[str, Any]:
+        outputs_dir = Path(ctx["step_dir"]) / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        (outputs_dir / "partial.txt").write_text("partial", encoding="utf-8")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error == "boom"
+    assert result.produced_artifacts == []
+
+
+def test_run_rejects_non_outputs_relative_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _stub(_ctx: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "outputs": [{"name": "bad", "type": "text", "path": "tmp/bad.txt"}],
+            "metrics": {},
+        }
+
+    monkeypatch.setattr(entrypoint, "fetch_and_snapshot", _stub)
+    request = _request(tmp_path=tmp_path, operation="fetch_and_snapshot")
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error is not None
+    assert "must start with 'outputs/'" in result.error
+
+
+def _render_stub(ctx: dict[str, Any]) -> dict[str, Any]:
+    outputs_dir = Path(ctx["step_dir"]) / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    (outputs_dir / "digest.json").write_text("{}", encoding="utf-8")
+    (outputs_dir / "report.md").write_text("# Report", encoding="utf-8")
+    (outputs_dir / "sources.json").write_text("[]", encoding="utf-8")
+    return {
+        "outputs": [
+            {"name": "digest_json", "type": "json", "path": "outputs/digest.json"},
+            {"name": "report_md", "type": "markdown", "path": "outputs/report.md"},
+            {"name": "sources_json", "type": "json", "path": "outputs/sources.json"},
+        ],
+        "metrics": {"highlights": 0},
+    }
