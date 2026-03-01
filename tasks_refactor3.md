@@ -469,12 +469,12 @@ Acceptance criteria:
 
 ## 6.5 Render Report Artifact
 
-- [ ] 6.5.1 Render `report.md`:
+- [X] 6.5.1 Render `report.md`:
   - Title
   - Query
   - Table of papers
   - Highlights section with inline citations
-- [ ] 6.5.2 Write artifacts:
+- [X] 6.5.2 Write artifacts:
   - `digest.json`
   - `report.md`
   - `sources.json` (paper metadata)
