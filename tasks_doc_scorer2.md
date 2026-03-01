@@ -176,10 +176,10 @@ Acceptance:
 ---
 
 ### Phase S3 — Aggregation + Selection
-- [ ] S3.1 Implement weighted aggregation (`score_total`)
-- [ ] S3.2 Implement deterministic tie-break ordering
-- [ ] S3.3 Implement `select_m`, `top_k`, and threshold logic
-- [ ] S3.4 Emit `papers_scored` + `papers_selected` + diagnostics payload
+- [X] S3.1 Implement weighted aggregation (`score_total`)
+- [X] S3.2 Implement deterministic tie-break ordering
+- [X] S3.3 Implement `select_m`, `top_k`, and threshold logic
+- [X] S3.4 Emit `papers_scored` + `papers_selected` + diagnostics payload
 
 Acceptance:
 - same input/config produces byte-stable scoring outputs
