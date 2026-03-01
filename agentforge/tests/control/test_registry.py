@@ -191,3 +191,21 @@ def test_load_agent_registry_rejects_empty_operation_name(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="Invalid AgentSpec"):
         load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_runtime_type_mismatch(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.runtime_mismatch",
+        intents=["research"],
+        tags=["digest"],
+    )
+    payload = agent_yaml.read_text(encoding="utf-8").replace(
+        "type: python_subprocess",
+        "type: container",
+    )
+    agent_yaml.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="runtime.type must match runtime adapter kind"):
+        load_agent_registry_from_paths([agent_yaml])

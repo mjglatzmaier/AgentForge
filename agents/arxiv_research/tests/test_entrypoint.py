@@ -229,6 +229,36 @@ def test_run_rejects_unsupported_mode_with_explicit_error(tmp_path: Path) -> Non
     assert "Unsupported mode" in result.error
 
 
+def test_run_maps_failed_operation_payload_to_failed_execution_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "snapshots" / "papers_raw.json"
+    papers_path.parent.mkdir(parents=True, exist_ok=True)
+    papers_path.write_text("[]", encoding="utf-8")
+
+    monkeypatch.setattr(
+        entrypoint,
+        "synthesize_digest",
+        lambda _ctx: {"status": "failed", "error": "provider timeout", "metrics": {"provider": "openai"}},
+    )
+    request = _request(
+        tmp_path=tmp_path,
+        operation="synthesize_digest",
+        mode="replay",
+        inputs=["papers_raw"],
+        input_artifacts={
+            "papers_raw": _artifact_payload(name="papers_raw", path="snapshots/papers_raw.json")
+        },
+    )
+
+    result = entrypoint.run(request)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error == "provider timeout"
+    assert result.metrics["provider"] == "openai"
+    assert result.produced_artifacts == []
+
+
 def _render_stub(ctx: dict[str, Any]) -> dict[str, Any]:
     outputs_dir = Path(ctx["step_dir"]) / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)

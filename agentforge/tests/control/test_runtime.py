@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from agentforge.control.adapters import PythonRuntimeAdapter
 from agentforge.control.events import load_control_events
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot
 from agentforge.control.runtime import execute_control_run
@@ -14,6 +15,7 @@ from agentforge.storage.manifest import load_manifest
 from agentforge.contracts.models import (
     ArtifactRef,
     AgentSpec,
+    AgentRuntimeKind,
     ControlEventType,
     ControlNode,
     ControlNodeState,
@@ -382,3 +384,49 @@ def test_execute_control_run_uses_container_adapter_and_returns_explicit_unsuppo
     assert result.node_results["container_node"].status is ExecutionStatus.FAILED
     assert result.node_results["container_node"].error is not None
     assert "Unsupported runtime for V1" in result.node_results["container_node"].error
+
+
+def test_execute_control_run_rejects_missing_adapter_for_runtime_kind(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-008"
+    plan = ControlPlan(
+        plan_id="plan-8",
+        trigger=TriggerSpec(kind=TriggerKind.MANUAL, source="cli"),
+        nodes=[ControlNode(node_id="command_node", agent_id="agent.command", operation="pipeline")],
+    )
+    command_spec = AgentSpec.model_validate(
+        {
+            "agent_id": "agent.command",
+            "version": "1.0.0",
+            "description": "command agent",
+            "intents": ["test"],
+            "tags": ["command"],
+            "input_contracts": ["Req"],
+            "output_contracts": ["Res"],
+            "runtime": {
+                "runtime": "command",
+                "type": "command_subprocess",
+                "entrypoint": "echo",
+                "timeout_s": 30,
+                "max_concurrency": 1,
+            },
+            "capabilities": {"operations": [{"name": "pipeline", "inputs": [], "outputs": []}]},
+            "operations_policy": {
+                "terminal_access": "none",
+                "allowed_commands": [],
+                "fs_scope": [],
+                "network_access": "none",
+                "network_allowlist": [],
+            },
+        }
+    )
+    registry = AgentRegistry(
+        agents_by_id={"agent.command": command_spec},
+        capability_index={},
+    )
+    _persist_run_artifacts(run_dir=run_dir, plan=plan, registry=registry)
+
+    with pytest.raises(ValueError, match="No RuntimeAdapter configured for runtime 'command'"):
+        execute_control_run(
+            run_dir,
+            runtime_adapters={AgentRuntimeKind.PYTHON: PythonRuntimeAdapter()},
+        )

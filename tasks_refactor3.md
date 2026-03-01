@@ -624,7 +624,7 @@ Acceptance criteria:
   - define normalized request/response JSON contract for non-Python plugins
   - require artifact paths and metrics/error fields to match `ExecutionResult` invariants
   - ensure Unix/macOS-only path and policy constraints remain enforced by adapters
-- [ ] 8c.3 Tests:
+- [X] 8c.3 Tests:
   - unit tests for plugin metadata/registry validation
   - unit tests for ArXiv entrypoint operation routing + failure mapping
   - regression test that unsupported runtime types fail explicitly and safely
