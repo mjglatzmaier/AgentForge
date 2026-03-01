@@ -442,7 +442,76 @@ def test_cli_resume_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
     assert completed.returncode == 2
 
 
-def test_cli_status_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
+def test_cli_status_reports_terminal_run_summary(tmp_path: Path) -> None:
+    _write_dispatch_plugin(tmp_path, module_name="dispatch_test_plugin", status="success")
+    _write_dispatch_agent(tmp_path)
+    request_file = tmp_path / "request.json"
+    request_file.write_text("{}", encoding="utf-8")
+    dispatch = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "dispatch",
+            "--agent",
+            "arxiv.research",
+            "--request",
+            str(request_file),
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert dispatch.returncode == 0
+    run_id = dispatch.stdout.strip()
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "agentforge",
+            "status",
+            "--run_id",
+            run_id,
+            "--base-dir",
+            str(tmp_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0
+    payload = json.loads(completed.stdout)
+    assert payload["run_id"] == run_id
+    assert payload["status"] == "terminal"
+    assert payload["node_states"]["dispatch_node"] == "succeeded"
+    assert payload["node_summary"]["succeeded"] == 1
+    assert payload["artifact_count"] == 2
+    assert payload["event_count"] >= 1
+    assert payload["latest_event_id"]
+
+
+def test_cli_status_reports_non_terminal_without_snapshot(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "run-001"
+    (run_dir / "control").mkdir(parents=True, exist_ok=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"run_id": "run-001", "artifacts": []}),
+        encoding="utf-8",
+    )
+    (run_dir / "control" / "runtime_state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "plan_id": "plan-x",
+                "node_states": {"node-a": "running", "node-b": "pending"},
+            }
+        ),
+        encoding="utf-8",
+    )
     completed = subprocess.run(
         [
             sys.executable,
@@ -459,4 +528,8 @@ def test_cli_status_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
         text=True,
         check=False,
     )
-    assert completed.returncode == 2
+    assert completed.returncode == 0
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "non-terminal"
+    assert payload["node_states"] == {"node-a": "running", "node-b": "pending"}
+    assert payload["node_summary"] == {"pending": 1, "running": 1}

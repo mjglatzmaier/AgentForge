@@ -661,7 +661,7 @@ Acceptance criteria:
 
 ### Phase 10 — CLI Status and Resume
 
-- [ ] 10.1 Implement `agentforge status --run_id <id>`:
+- [X] 10.1 Implement `agentforge status --run_id <id>`:
   - read control snapshot/events/manifest for the run
   - display run terminal/non-terminal status
   - summarize node states and latest event id

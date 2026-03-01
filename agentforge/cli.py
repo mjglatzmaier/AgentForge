@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import yaml
 
+from agentforge.control.events import load_control_events
 from agentforge.control.registry import AgentRegistry, build_registry_snapshot, load_agent_registry
 from agentforge.control.runtime import ControlRunExecution, execute_control_run
 from agentforge.control.state import persist_control_artifacts
@@ -24,7 +27,7 @@ from agentforge.contracts.models import (
 )
 from agentforge.orchestrator.runner import run_pipeline
 from agentforge.storage.hashing import sha256_file
-from agentforge.storage.manifest import init_manifest, register_artifact, save_manifest
+from agentforge.storage.manifest import init_manifest, load_manifest, register_artifact, save_manifest
 from agentforge.storage.run_layout import create_run_layout
 
 
@@ -126,7 +129,9 @@ def run_cli(argv: list[str] | None = None) -> int:
             raise RuntimeError("resume command is not implemented yet")
 
         if args.command == "status":
-            raise RuntimeError("status command is not implemented yet")
+            payload = _build_status_payload(run_id=args.run_id, base_dir=Path(args.base_dir))
+            print(json.dumps(payload, sort_keys=True))
+            return 0
 
         raise CLIValidationError(f"Unknown command: {args.command}")
     except CLIValidationError as exc:
@@ -258,3 +263,66 @@ def _dispatch_failure_message(*, run_id: str, execution: ControlRunExecution) ->
     result = execution.node_results[node_id]
     detail = result.error or result.traceback_excerpt or "execution failed"
     return f"dispatch failed (run_id={run_id}, node_id={node_id}): {detail}"
+
+
+def _build_status_payload(*, run_id: str, base_dir: Path) -> dict[str, Any]:
+    run_dir = base_dir / "runs" / run_id
+    manifest = load_manifest(run_dir / "manifest.json")
+    snapshot = _load_status_snapshot(run_dir)
+    node_states = _snapshot_node_states(snapshot)
+    node_summary = _summarize_node_states(node_states)
+    events = load_control_events(run_dir)
+    latest_event_id = events[-1].event_id if events else snapshot.get("last_event_id")
+    terminal = bool(node_states) and all(_is_terminal_state(state) for state in node_states.values())
+    return {
+        "run_id": run_id,
+        "status": "terminal" if terminal else "non-terminal",
+        "node_states": node_states,
+        "node_summary": node_summary,
+        "latest_event_id": latest_event_id,
+        "artifact_count": len(manifest.artifacts),
+        "event_count": len(events),
+    }
+
+
+def _load_status_snapshot(run_dir: Path) -> dict[str, Any]:
+    snapshot_path = run_dir / "control" / "snapshot.json"
+    if snapshot_path.exists():
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"Invalid control snapshot payload: {snapshot_path}")
+        return payload
+
+    runtime_state_path = run_dir / "control" / "runtime_state.json"
+    if runtime_state_path.exists():
+        payload = json.loads(runtime_state_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"Invalid runtime state payload: {runtime_state_path}")
+        return payload
+
+    raise FileNotFoundError(f"Control snapshot not found: {snapshot_path}")
+
+
+def _snapshot_node_states(snapshot: dict[str, Any]) -> dict[str, str]:
+    raw = snapshot.get("node_states")
+    if not isinstance(raw, dict):
+        raise ValueError("Control snapshot missing 'node_states' mapping.")
+    normalized: dict[str, str] = {}
+    for node_id, state in raw.items():
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError("Control snapshot node_ids must be non-empty strings.")
+        if not isinstance(state, str) or not state.strip():
+            raise ValueError("Control snapshot node state values must be non-empty strings.")
+        normalized[node_id.strip()] = state.strip()
+    return dict(sorted(normalized.items()))
+
+
+def _summarize_node_states(node_states: dict[str, str]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for state in node_states.values():
+        summary[state] = summary.get(state, 0) + 1
+    return dict(sorted(summary.items()))
+
+
+def _is_terminal_state(state: str) -> bool:
+    return state in {"succeeded", "failed", "cancelled"}
