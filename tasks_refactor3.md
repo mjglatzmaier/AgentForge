@@ -288,7 +288,7 @@ Acceptance criteria:
 - [X] 4.2 Artifact handoff:
   - downstream reads inputs strictly by manifest refs
   - ingest steps must write snapshot artifacts (determinism boundary)
-- [ ] 4.3 Failure semantics:
+- [X] 4.3 Failure semantics:
   - node failure blocks downstream unless retry policy allows
   - transient retries only when declared; never infinite
 - [ ] 4.4 Control-plane persistence:

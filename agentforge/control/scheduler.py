@@ -22,11 +22,17 @@ def plan_scheduler_tick(
     *,
     node_states: Mapping[str, ControlNodeState] | None = None,
     agent_max_concurrency: Mapping[str, int] | None = None,
+    retry_counts: Mapping[str, int] | None = None,
 ) -> SchedulerTick:
     """Compute ready and dispatchable nodes for one scheduler iteration."""
 
     nodes_by_id = {node.node_id: node for node in plan.nodes}
     states = _build_state_map(plan, node_states=node_states)
+    _apply_transient_retries(
+        nodes_by_id=nodes_by_id,
+        states=states,
+        retry_counts=retry_counts or {},
+    )
     _promote_ready_nodes(nodes_by_id=nodes_by_id, states=states)
     ready_ids = tuple(sorted(node_id for node_id, state in states.items() if state is ControlNodeState.READY))
     dispatch_ids = tuple(
@@ -70,6 +76,25 @@ def _promote_ready_nodes(
         dependencies = nodes_by_id[node_id].depends_on
         if all(states[dep] is ControlNodeState.SUCCEEDED for dep in dependencies):
             states[node_id] = ControlNodeState.READY
+
+
+def _apply_transient_retries(
+    *,
+    nodes_by_id: dict[str, ControlNode],
+    states: dict[str, ControlNodeState],
+    retry_counts: Mapping[str, int],
+) -> None:
+    for node_id in sorted(nodes_by_id):
+        if node_id in retry_counts and retry_counts[node_id] < 0:
+            raise ValueError(f"retry_count for node '{node_id}' must be >= 0.")
+        if states[node_id] is not ControlNodeState.FAILED:
+            continue
+        retry_limit = _transient_retry_limit(nodes_by_id[node_id])
+        if retry_limit <= 0:
+            continue
+        attempts = retry_counts.get(node_id, 0)
+        if attempts < retry_limit:
+            states[node_id] = ControlNodeState.PENDING
 
 
 def _select_dispatch_nodes(
@@ -122,3 +147,16 @@ def _agent_limit(agent_id: str, limits: Mapping[str, int]) -> int:
     if limit < 1:
         raise ValueError(f"max_concurrency for agent '{agent_id}' must be >= 1.")
     return limit
+
+
+def _transient_retry_limit(node: ControlNode) -> int:
+    if not node.retry_policy:
+        return 0
+    raw = node.retry_policy.get("transient_max_retries")
+    if raw is None:
+        return 0
+    if not isinstance(raw, int) or raw < 0:
+        raise ValueError(
+            f"Node '{node.node_id}' retry_policy.transient_max_retries must be an integer >= 0."
+        )
+    return raw

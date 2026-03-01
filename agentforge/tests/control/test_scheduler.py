@@ -18,6 +18,7 @@ def _node(
     agent_id: str,
     depends_on: list[str] | None = None,
     state: ControlNodeState = ControlNodeState.PENDING,
+    retry_policy: dict[str, int] | None = None,
 ) -> ControlNode:
     return ControlNode(
         node_id=node_id,
@@ -25,6 +26,7 @@ def _node(
         operation="op",
         depends_on=list(depends_on or []),
         state=state,
+        retry_policy=dict(retry_policy or {}),
     )
 
 
@@ -116,3 +118,92 @@ def test_scheduler_rejects_unknown_node_state_input() -> None:
 
     with pytest.raises(ValueError, match="Unknown node_id"):
         plan_scheduler_tick(plan, node_states={"missing": ControlNodeState.READY})
+
+
+def test_scheduler_blocks_downstream_when_dependency_failed() -> None:
+    plan = _plan(
+        [
+            _node("ingest", agent_id="agent.ingest", state=ControlNodeState.FAILED),
+            _node("summarize", agent_id="agent.summary", depends_on=["ingest"]),
+        ],
+        max_parallel=2,
+    )
+
+    tick = plan_scheduler_tick(
+        plan,
+        node_states={"ingest": ControlNodeState.FAILED, "summarize": ControlNodeState.PENDING},
+        agent_max_concurrency={"agent.ingest": 1, "agent.summary": 1},
+    )
+
+    assert tick.node_states["summarize"] is ControlNodeState.PENDING
+    assert tick.ready_node_ids == ()
+    assert tick.dispatch_node_ids == ()
+
+
+def test_scheduler_retries_failed_node_only_when_declared() -> None:
+    plan = _plan(
+        [
+            _node(
+                "ingest",
+                agent_id="agent.ingest",
+                state=ControlNodeState.FAILED,
+                retry_policy={"transient_max_retries": 2},
+            ),
+            _node("summarize", agent_id="agent.summary", depends_on=["ingest"]),
+        ],
+        max_parallel=1,
+    )
+
+    tick = plan_scheduler_tick(
+        plan,
+        node_states={"ingest": ControlNodeState.FAILED, "summarize": ControlNodeState.PENDING},
+        retry_counts={"ingest": 1},
+        agent_max_concurrency={"agent.ingest": 1, "agent.summary": 1},
+    )
+
+    assert tick.node_states["ingest"] is ControlNodeState.READY
+    assert tick.dispatch_node_ids == ("ingest",)
+
+
+def test_scheduler_does_not_retry_when_retry_limit_reached() -> None:
+    plan = _plan(
+        [
+            _node(
+                "ingest",
+                agent_id="agent.ingest",
+                state=ControlNodeState.FAILED,
+                retry_policy={"transient_max_retries": 1},
+            )
+        ],
+        max_parallel=1,
+    )
+
+    tick = plan_scheduler_tick(
+        plan,
+        node_states={"ingest": ControlNodeState.FAILED},
+        retry_counts={"ingest": 1},
+        agent_max_concurrency={"agent.ingest": 1},
+    )
+
+    assert tick.node_states["ingest"] is ControlNodeState.FAILED
+    assert tick.dispatch_node_ids == ()
+
+
+def test_scheduler_rejects_non_finite_retry_policy() -> None:
+    plan = _plan(
+        [
+            _node(
+                "ingest",
+                agent_id="agent.ingest",
+                state=ControlNodeState.FAILED,
+                retry_policy={"transient_max_retries": -1},
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="transient_max_retries"):
+        plan_scheduler_tick(
+            plan,
+            node_states={"ingest": ControlNodeState.FAILED},
+            retry_counts={"ingest": 0},
+        )
