@@ -115,3 +115,38 @@ def test_replay_mode_requires_snapshot_inputs(tmp_path: Path) -> None:
                 "inputs": {"raw_feed_xml": {"abs_path": str(raw_feed)}},
             }
         )
+
+
+def test_live_mode_normalizes_to_deterministic_paper_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unordered_xml = """
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00002v1</id>
+    <title>Paper Two</title>
+    <summary>Second summary.</summary>
+    <published>2026-01-02T00:00:00Z</published>
+    <author><name>Bob</name></author>
+    <category term="cs.LG" />
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.00001v1</id>
+    <title>Paper One</title>
+    <summary>First summary.</summary>
+    <published>2026-01-01T00:00:00Z</published>
+    <author><name>Alice</name></author>
+    <category term="cs.AI" />
+  </entry>
+</feed>
+""".strip()
+    monkeypatch.setattr(ingest.httpx, "get", lambda *args, **kwargs: _FakeResponse(unordered_xml))
+
+    ingest.fetch_and_snapshot(
+        {
+            "step_dir": str(tmp_path),
+            "config": {"query": "cat:cs.AI", "max_results": 2, "mode": "live"},
+        }
+    )
+    papers = json.loads((tmp_path / "outputs" / "papers_raw.json").read_text(encoding="utf-8"))
+    assert [paper["paper_id"] for paper in papers] == ["2401.00001v1", "2401.00002v1"]

@@ -504,12 +504,12 @@ Acceptance criteria:
 
 ## 6.7 Tests
 
-- [ ] Unit tests:
+- [X] Unit tests:
   - AgentSpec validation
   - Snapshot replay produces identical digest
   - Citation validation rejects invalid references
   - Deterministic ordering of papers
-- [ ] Integration test:
+- [X] Integration test:
   - Run in replay mode using fixed snapshot artifact
   - Compare digest.json to expected fixture
 

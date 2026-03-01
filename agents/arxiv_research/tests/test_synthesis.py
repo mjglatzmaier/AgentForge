@@ -155,3 +155,39 @@ def test_synthesize_digest_replay_mode_uses_deterministic_settings(
     assert call["model"] == "gpt-4o-mini"
     assert call["temperature"] == 0.0
     assert call["seed"] == 0
+
+
+def test_replay_mode_produces_identical_digest_for_same_snapshot_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    papers_path = tmp_path / "papers_raw.json"
+    papers_path.write_text(json.dumps(_papers_payload()), encoding="utf-8")
+    digest = ResearchDigest(
+        query="agent systems",
+        generated_at_utc=datetime(2026, 1, 3, tzinfo=timezone.utc),
+        papers=[ResearchPaper.model_validate(item) for item in _papers_payload()],
+        highlights=[DigestBullet(text="Replay citation", cited_paper_ids=["2401.00001v1"])],
+    )
+    provider = _ProviderStub(digest)
+    monkeypatch.setattr(synthesis, "_resolve_provider", lambda _ctx: provider)
+
+    run_a = tmp_path / "run_a"
+    run_b = tmp_path / "run_b"
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(run_a),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay"},
+        }
+    )
+    synthesis.synthesize_digest(
+        {
+            "step_dir": str(run_b),
+            "inputs": {"papers_raw": {"abs_path": str(papers_path)}},
+            "config": {"mode": "replay"},
+        }
+    )
+
+    digest_a = json.loads((run_a / "outputs" / "digest.json").read_text(encoding="utf-8"))
+    digest_b = json.loads((run_b / "outputs" / "digest.json").read_text(encoding="utf-8"))
+    assert digest_a == digest_b
