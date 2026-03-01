@@ -17,7 +17,25 @@ def _write_agent_yaml(
     agent_id: str,
     intents: list[str],
     tags: list[str],
+    operations: list[str] | None = None,
 ) -> None:
+    operation_items = ["pipeline"] if operations is None else operations
+    if operation_items:
+        capability_lines = "\n".join(
+            ["  operations:"]
+            + [
+                "\n".join(
+                    [
+                        f"    - name: {name}",
+                        "      inputs: [request_json]",
+                        f"      outputs: [{name}_result]",
+                    ]
+                )
+                for name in operation_items
+            ]
+        )
+    else:
+        capability_lines = "  operations: []"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
@@ -30,9 +48,12 @@ input_contracts: [Req]
 output_contracts: [Res]
 runtime:
   runtime: python
+  type: python_subprocess
   entrypoint: agents.{agent_id}.entrypoint:run
   timeout_s: 30
   max_concurrency: 1
+capabilities:
+{capability_lines}
 operations_policy:
   terminal_access: none
   allowed_commands: []
@@ -127,3 +148,46 @@ def test_arxiv_research_agentspec_validates_under_registry() -> None:
         "render_report",
     ]
     assert spec.operations_policy.network_allowlist == ["export.arxiv.org"]
+
+
+def test_load_agent_registry_rejects_missing_operations_metadata(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.missingops",
+        intents=["research"],
+        tags=["digest"],
+        operations=[],
+    )
+
+    with pytest.raises(ValueError, match="capabilities.operations must declare at least one operation"):
+        load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_duplicate_operation_names(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.dupops",
+        intents=["research"],
+        tags=["digest"],
+        operations=["fetch", "fetch"],
+    )
+
+    with pytest.raises(ValueError, match="duplicate name"):
+        load_agent_registry_from_paths([agent_yaml])
+
+
+def test_load_agent_registry_rejects_empty_operation_name(tmp_path: Path) -> None:
+    agent_yaml = tmp_path / "agent.yaml"
+    _write_agent_yaml(
+        agent_yaml,
+        agent_id="agent.emptyop",
+        intents=["research"],
+        tags=["digest"],
+    )
+    payload = agent_yaml.read_text(encoding="utf-8").replace("- name: pipeline", "- name: '   '")
+    agent_yaml.write_text(payload, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid AgentSpec"):
+        load_agent_registry_from_paths([agent_yaml])

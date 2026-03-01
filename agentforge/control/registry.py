@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from agentforge.control.discovery import discover_agent_spec_paths
-from agentforge.contracts.models import AgentSpec
+from agentforge.contracts.models import AgentRuntimeKind, AgentSpec
 
 
 @dataclass(frozen=True)
@@ -80,6 +80,7 @@ def load_agent_registry_from_paths(spec_paths: list[str | Path]) -> AgentRegistr
     for path in sorted(Path(item).resolve() for item in spec_paths):
         payload = _load_agent_yaml(path)
         spec = _parse_agent_spec(path, payload)
+        _validate_plugin_metadata(path, spec)
         existing_path = seen_by_id.get(spec.agent_id)
         if existing_path is not None:
             raise ValueError(
@@ -125,6 +126,36 @@ def _build_capability_index(agents_by_id: dict[str, AgentSpec]) -> dict[str, tup
     for capability, agent_ids in index.items():
         normalized[capability] = tuple(sorted(agent_ids))
     return normalized
+
+
+def _validate_plugin_metadata(path: Path, spec: AgentSpec) -> None:
+    if spec.runtime.type is None:
+        raise ValueError(
+            f"Invalid AgentSpec at {path}: runtime.type is required for plugin runtime metadata."
+        )
+    if spec.runtime.runtime is AgentRuntimeKind.PYTHON and spec.runtime.entrypoint.count(":") != 1:
+        raise ValueError(
+            f"Invalid AgentSpec at {path}: python runtime entrypoint must be 'module.path:function'."
+        )
+    if not spec.capabilities.operations:
+        raise ValueError(
+            f"Invalid AgentSpec at {path}: capabilities.operations must declare at least one operation."
+        )
+
+    seen_ops: set[str] = set()
+    duplicates: list[str] = []
+    for operation in spec.capabilities.operations:
+        name = operation.name
+        if name in seen_ops:
+            duplicates.append(name)
+            continue
+        seen_ops.add(name)
+    if duplicates:
+        duplicate_names = ", ".join(sorted(set(duplicates)))
+        raise ValueError(
+            f"Invalid AgentSpec at {path}: capabilities.operations contains duplicate name(s): "
+            f"{duplicate_names}"
+        )
 
 
 def _write_json_atomic(path: Path, payload: Any) -> None:

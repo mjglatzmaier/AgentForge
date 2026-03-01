@@ -595,7 +595,7 @@ Acceptance criteria:
   - `runtime.type` (v1: `python_subprocess`; future: `container`)
   - runtime entrypoint reference for Python plugins
   - operation capability metadata (`capabilities.operations`) with expected input/output artifact names
-- [ ] 8a.3 Registry/plugin validation:
+- [X] 8a.3 Registry/plugin validation:
   - validate plugin metadata completeness at load time
   - validate declared operation names are unique and non-empty
   - fail fast with explicit schema/contract errors
