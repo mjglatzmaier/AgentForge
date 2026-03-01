@@ -175,6 +175,18 @@ def test_cli_dispatch_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:
     assert len(artifacts) == 1
     assert artifacts[0]["name"] == "request_json"
     assert artifacts[0]["path"] == "control/inputs/request.json"
+    plan_payload = json.loads((run_dir / "control" / "plan.json").read_text(encoding="utf-8"))
+    trigger_payload = json.loads((run_dir / "control" / "trigger.json").read_text(encoding="utf-8"))
+    registry_payload = json.loads((run_dir / "control" / "registry.json").read_text(encoding="utf-8"))
+    assert plan_payload["plan_id"] == f"dispatch-{run_dir.name}"
+    assert len(plan_payload["nodes"]) == 1
+    assert plan_payload["nodes"][0]["agent_id"] == "agent.research"
+    assert plan_payload["nodes"][0]["operation"] == "pipeline"
+    assert plan_payload["nodes"][0]["inputs"] == ["request_json"]
+    assert trigger_payload["request_artifact"] == "request_json"
+    assert trigger_payload["metadata"]["agent_id"] == "agent.research"
+    assert registry_payload["schema_version"] == 1
+    assert "agents" in registry_payload
 
 
 def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
@@ -203,6 +215,11 @@ def test_cli_dispatch_accepts_event_trigger_kind(tmp_path: Path) -> None:
         check=False,
     )
     assert completed.returncode == 2
+    run_dirs = [path for path in (tmp_path / "runs").iterdir() if path.name != ".cache"]
+    assert len(run_dirs) == 1
+    trigger_payload = json.loads((run_dirs[0] / "control" / "trigger.json").read_text(encoding="utf-8"))
+    assert trigger_payload["kind"] == "event"
+    assert trigger_payload["event_type"] == "webhook.github"
 
 
 def test_cli_resume_entrypoint_uses_exit_code_two(tmp_path: Path) -> None:

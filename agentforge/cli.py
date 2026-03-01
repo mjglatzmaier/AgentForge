@@ -8,7 +8,16 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from agentforge.contracts.models import ArtifactRef, Mode, TriggerKind, TriggerSpec
+from agentforge.control.registry import build_registry_snapshot, load_agent_registry
+from agentforge.control.state import persist_control_artifacts
+from agentforge.contracts.models import (
+    ArtifactRef,
+    ControlNode,
+    ControlPlan,
+    Mode,
+    TriggerKind,
+    TriggerSpec,
+)
 from agentforge.orchestrator.runner import run_pipeline
 from agentforge.storage.hashing import sha256_file
 from agentforge.storage.manifest import init_manifest, register_artifact, save_manifest
@@ -89,10 +98,12 @@ def run_cli(argv: list[str] | None = None) -> int:
             raise RuntimeError("eval command is not implemented yet")
 
         if args.command == "dispatch":
-            _build_trigger_spec(args)
-            run_id = _persist_dispatch_request_artifact(
+            trigger = _build_trigger_spec(args)
+            run_id = _initialize_dispatch_run(
+                agent_id=args.agent,
                 request_path=Path(args.request),
                 base_dir=Path(args.base_dir),
+                trigger=trigger,
             )
             raise RuntimeError(f"dispatch command is not implemented yet (run_id={run_id})")
 
@@ -127,7 +138,13 @@ def _build_trigger_spec(args: argparse.Namespace) -> TriggerSpec:
     )
 
 
-def _persist_dispatch_request_artifact(*, request_path: Path, base_dir: Path) -> str:
+def _initialize_dispatch_run(
+    *,
+    agent_id: str,
+    request_path: Path,
+    base_dir: Path,
+    trigger: TriggerSpec,
+) -> str:
     if not request_path.exists():
         raise FileNotFoundError(f"Request file not found: {request_path}")
     if not request_path.is_file():
@@ -150,4 +167,41 @@ def _persist_dispatch_request_artifact(*, request_path: Path, base_dir: Path) ->
     )
     register_artifact(manifest, artifact)
     save_manifest(layout.manifest_json, manifest)
+
+    trigger_metadata = dict(trigger.metadata)
+    trigger_metadata["agent_id"] = agent_id
+    trigger_snapshot = trigger.model_copy(
+        update={
+            "request_artifact": "request_json",
+            "metadata": trigger_metadata,
+        }
+    )
+    plan = _materialize_initial_control_plan(
+        run_id=run_id,
+        agent_id=agent_id,
+        trigger=trigger_snapshot,
+    )
+    registry = load_agent_registry(base_dir)
+    persist_control_artifacts(
+        layout.run_dir,
+        plan=plan,
+        trigger=trigger_snapshot,
+        registry=build_registry_snapshot(registry),
+    )
     return run_id
+
+
+def _materialize_initial_control_plan(*, run_id: str, agent_id: str, trigger: TriggerSpec) -> ControlPlan:
+    return ControlPlan(
+        plan_id=f"dispatch-{run_id}",
+        trigger=trigger,
+        max_parallel=1,
+        nodes=[
+            ControlNode(
+                node_id="dispatch_node",
+                agent_id=agent_id,
+                operation="pipeline",
+                inputs=["request_json"],
+            )
+        ],
+    )

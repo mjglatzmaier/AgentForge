@@ -640,7 +640,7 @@ Acceptance criteria:
 
 ### Phase 9 — Real CLI Dispatch Command
 
-- [ ] 9.1 Implement `agentforge dispatch --agent <agent_id> --request <request.json>`:
+- [X] 9.1 Implement `agentforge dispatch --agent <agent_id> --request <request.json>`:
   - create run directory and initialize manifest/control artifacts
   - persist request payload artifact (`request_json`) and trigger metadata
   - materialize an initial `ControlPlan` for the selected agent
