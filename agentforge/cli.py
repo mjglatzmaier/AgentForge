@@ -32,6 +32,19 @@ def _build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("run_id")
     eval_parser.add_argument("--base-dir", default=".")
 
+    dispatch_parser = subparsers.add_parser("dispatch")
+    dispatch_parser.add_argument("--agent", required=True)
+    dispatch_parser.add_argument("--request", required=True)
+    dispatch_parser.add_argument("--base-dir", default=".")
+
+    resume_parser = subparsers.add_parser("resume")
+    resume_parser.add_argument("--run_id", required=True)
+    resume_parser.add_argument("--base-dir", default=".")
+
+    status_parser = subparsers.add_parser("status")
+    status_parser.add_argument("--run_id", required=True)
+    status_parser.add_argument("--base-dir", default=".")
+
     return parser
 
 
@@ -52,6 +65,15 @@ def run_cli(argv: list[str] | None = None) -> int:
 
         if args.command == "eval":
             raise RuntimeError("eval command is not implemented yet")
+
+        if args.command == "dispatch":
+            raise RuntimeError("dispatch command is not implemented yet")
+
+        if args.command == "resume":
+            raise RuntimeError("resume command is not implemented yet")
+
+        if args.command == "status":
+            raise RuntimeError("status command is not implemented yet")
 
         raise CLIValidationError(f"Unknown command: {args.command}")
     except CLIValidationError as exc:

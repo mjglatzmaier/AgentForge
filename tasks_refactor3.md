@@ -303,7 +303,7 @@ Acceptance criteria:
 
 ## Phase 5 — CLI + Scheduled/Event Trigger Support
 
-- [ ] 5.1 CLI entrypoints:
+- [X] 5.1 CLI entrypoints:
   - `agentforge run <pipeline.yaml>` (existing runner path)
   - `agentforge dispatch --agent <agent_id> --request <request.json>`
   - `agentforge resume --run_id <id>`
