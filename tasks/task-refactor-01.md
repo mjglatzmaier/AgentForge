@@ -131,12 +131,12 @@ policy.md
 ---
 
 ## 0.8 Lumen Workbench integration (minimal)
-- [ ] Lumen connects to `agentd`:
+- [X] Lumen connects to `agentd`:
   - list runs
   - stream events
   - list approvals + approve/deny
   - browse artifacts
-- [ ] UI:
+- [X] UI:
   - Runs list panel
   - Event timeline panel
   - Approval modal
