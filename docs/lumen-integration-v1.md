@@ -7,6 +7,15 @@ Lumen does **not** execute tools, run connectors, or hold secrets.
 
 ---
 
+## Current Integration Strategy
+
+- Treat `agentforge/sidecar/submodules/lumen` as a temporary reference source.
+- Harvest only reusable UX/runtime patterns (timeline, approvals, artifact browsing, scheduling visuals).
+- Do not couple AgentForge kernel APIs to game-engine internals.
+- Keep workbench protocol stable so Lumen can be swapped with another client implementation if needed.
+
+---
+
 ## v1 Responsibilities
 
 Lumen may:
@@ -70,6 +79,17 @@ Lumen should treat events as append-only and cursor-based.
 - Approval actions require CSRF-safe or signed request semantics.
 - Artifact access is read-only and path-sandboxed to run directories.
 - Secret fields are redacted by `agentd` before data reaches Lumen.
+
+---
+
+## Front-End Technology Recommendation
+
+- Preferred UI stack for native workbench clients: **Dear ImGui**.
+- Recommended architecture:
+  - AgentForge side-car remains Python-first (`agentd` + contracts + policy + approvals).
+  - Native UI client (Lumen or replacement) consumes local `agentd` APIs over typed JSON contracts.
+  - Render-layer decisions (Vulkan/OpenGL/Metal) remain entirely in the workbench client boundary.
+- This preserves developer velocity in kernel/core while allowing high-performance native UX.
 
 ---
 

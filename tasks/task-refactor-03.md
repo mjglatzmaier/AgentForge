@@ -10,6 +10,7 @@ Expose a stable local control API so Lumen can visualize workflows, approvals, a
 - Add mutation APIs for approvals and run control (`pause/resume/cancel`).
 - Enforce authn/authz for operator actions.
 - Add cursor-based event streaming and poll fallback.
+- Define Dear ImGui-oriented workbench client contract and projections.
 
 ## Scope (Out)
 
@@ -23,7 +24,11 @@ Expose a stable local control API so Lumen can visualize workflows, approvals, a
 3. Add run graph projection from control plan + runtime state.
 4. Add approval endpoints wired to approval gateway.
 5. Add artifact index/read endpoint with path sandbox checks.
-6. Add tests:
+6. Add Dear ImGui workbench projection contract:
+   - run list view model
+   - event timeline projection model
+   - pending approval modal model
+7. Add tests:
    - event pagination and cursor correctness
    - approval action flow
    - run control state transitions
@@ -35,3 +40,4 @@ Expose a stable local control API so Lumen can visualize workflows, approvals, a
 - Operator approval actions are enforced and reflected in event stream.
 - Artifact access is read-only and restricted to run sandbox.
 - API behavior is cross-platform and does not rely on OS-specific path assumptions.
+- Workbench contract supports an optional Dear ImGui native client without API changes.
