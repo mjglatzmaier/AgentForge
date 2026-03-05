@@ -45,10 +45,10 @@ policy.md
 ---
 
 ## 0.2 Tool Contract v1 (kernel-brokered tools)
-- [ ] Define `ToolSpec` manifest:
+- [X] Define `ToolSpec` manifest:
   - `name`, `version`
   - operations: `op_id`, input/output schema, required capabilities, `approval_required`
-- [ ] Implement Tool Broker in `agentd`:
+- [X] Implement Tool Broker in `agentd`:
   - validate tool call inputs/outputs (Pydantic)
   - enforce capabilities
   - enforce timeouts/retries
