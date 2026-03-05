@@ -8,6 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from agentforge.sidecar.agentd.api.authz_v1 import require_operator_scope
+from agentforge.sidecar.core.contracts.operator_auth_v1 import OperatorAuthContextV1
+
 
 class RunSummaryV1(BaseModel):
     run_id: str
@@ -121,21 +124,57 @@ def get_run_graph(runs_root: str | Path, *, run_id: str) -> RunGraphV1:
     return RunGraphV1(run_id=run_id, nodes=nodes)
 
 
-def pause_run(runs_root: str | Path, *, run_id: str) -> RunControlMutationResultV1:
+def pause_run(
+    runs_root: str | Path,
+    *,
+    run_id: str,
+    auth_context: OperatorAuthContextV1 | None = None,
+) -> RunControlMutationResultV1:
     """Adapter for POST /runs/{run_id}:pause."""
 
+    require_operator_scope(
+        runs_root,
+        auth_context=auth_context,
+        required_scope="runs:control",
+        action="pause_run",
+        run_id=run_id,
+    )
     return _set_run_control_state(runs_root, run_id=run_id, state="paused")
 
 
-def resume_run(runs_root: str | Path, *, run_id: str) -> RunControlMutationResultV1:
+def resume_run(
+    runs_root: str | Path,
+    *,
+    run_id: str,
+    auth_context: OperatorAuthContextV1 | None = None,
+) -> RunControlMutationResultV1:
     """Adapter for POST /runs/{run_id}:resume."""
 
+    require_operator_scope(
+        runs_root,
+        auth_context=auth_context,
+        required_scope="runs:control",
+        action="resume_run",
+        run_id=run_id,
+    )
     return _set_run_control_state(runs_root, run_id=run_id, state="running")
 
 
-def cancel_run(runs_root: str | Path, *, run_id: str) -> RunControlMutationResultV1:
+def cancel_run(
+    runs_root: str | Path,
+    *,
+    run_id: str,
+    auth_context: OperatorAuthContextV1 | None = None,
+) -> RunControlMutationResultV1:
     """Adapter for POST /runs/{run_id}:cancel."""
 
+    require_operator_scope(
+        runs_root,
+        auth_context=auth_context,
+        required_scope="runs:control",
+        action="cancel_run",
+        run_id=run_id,
+    )
     return _set_run_control_state(runs_root, run_id=run_id, state="cancelled")
 
 

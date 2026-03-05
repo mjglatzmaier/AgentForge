@@ -3,12 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from agentforge.sidecar.agentctl.approvals_cli import approve, approvals_list, deny
 from agentforge.sidecar.agentd.api.approvals_api import approve_approval, deny_approval, get_approvals
+from agentforge.sidecar.agentd.api.authz_v1 import OperatorAuthorizationError
 from agentforge.sidecar.agentd.broker.audit_store_v1 import load_audit_events
 from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
+from agentforge.sidecar.core.contracts.operator_auth_v1 import OperatorAuthContextV1
 from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.tool_contract_v1 import ToolCallRequestV1
 
@@ -37,16 +41,17 @@ def test_approval_gateway_returns_stable_approval_id(tmp_path: Path) -> None:
 def test_approval_api_list_approve_and_deny(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
     gateway = ApprovalGatewayV1(runs_root)
+    auth_context = OperatorAuthContextV1(operator_id="operator_1", scopes=["approvals:write"])
 
     first = gateway.request(_request())
     second = gateway.request(_request().model_copy(update={"request_id": "req_approval_2"}))
     pending = get_approvals(runs_root).approvals
     assert {item.approval_id for item in pending} == {first.approval_id, second.approval_id}
 
-    approved = approve_approval(runs_root, first.approval_id)
+    approved = approve_approval(runs_root, first.approval_id, auth_context=auth_context)
     assert approved.status is ApprovalStatus.APPROVED
 
-    denied = deny_approval(runs_root, second.approval_id)
+    denied = deny_approval(runs_root, second.approval_id, auth_context=auth_context)
     assert denied.status is ApprovalStatus.DENIED
     assert get_approvals(runs_root).approvals == []
     decisions = {event.decision for event in load_audit_events(runs_root)}
@@ -63,6 +68,25 @@ def test_approval_cli_helpers(tmp_path: Path) -> None:
 
     another = gateway.request(_request().model_copy(update={"request_id": "req_approval_3"}))
     assert deny(runs_root, another.approval_id).status is ApprovalStatus.DENIED
+
+
+def test_approval_api_denies_missing_operator_auth_and_does_not_mutate(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    gateway = ApprovalGatewayV1(runs_root)
+    pending = gateway.request(_request())
+
+    with pytest.raises(OperatorAuthorizationError, match="Missing operator auth context."):
+        approve_approval(runs_root, pending.approval_id)
+
+    record = gateway.get(pending.approval_id)
+    assert record is not None
+    assert record.status is ApprovalStatus.PENDING
+    denied_events = [
+        event
+        for event in load_audit_events(runs_root)
+        if event.reason_code == "OPERATOR_UNAUTHORIZED"
+    ]
+    assert denied_events
 
 
 class _Clock:

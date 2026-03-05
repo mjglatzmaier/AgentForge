@@ -107,14 +107,14 @@ Expose a stable local control API so Lumen can visualize workflows, approvals, a
 - `agentforge/tests/sidecar/test_workbench_v1.py` (or new `test_agentd_authz_v1.py`)
 
 **Checklist**
-1. Define a typed operator auth context (e.g., operator id + scopes/permissions).
-2. Add mutation adapter signatures requiring auth context (or explicit auth token envelope).
-3. Enforce allow/deny checks with stable codes (e.g., `OPERATOR_UNAUTHORIZED`, `OPERATOR_FORBIDDEN`).
-4. Keep read endpoints (`GET` runs/events/artifacts/approvals) accessible per current local policy unless explicitly restricted.
-5. Add tests for:
-   - unauthorized mutation denied,
-   - authorized mutation succeeds,
-   - denial paths are auditable and do not mutate state.
+- [X] Define a typed operator auth context (e.g., operator id + scopes/permissions).
+- [X] Add mutation adapter signatures requiring auth context (or explicit auth token envelope).
+- [X] Enforce allow/deny checks with stable codes (e.g., `OPERATOR_UNAUTHORIZED`, `OPERATOR_FORBIDDEN`).
+- [X] Keep read endpoints (`GET` runs/events/artifacts/approvals) accessible per current local policy unless explicitly restricted.
+- [X] Add tests for:
+  - unauthorized mutation denied,
+  - authorized mutation succeeds,
+  - denial paths are auditable and do not mutate state.
 
 **Slice 03-B acceptance**
 - Mutation endpoints require valid operator authorization.

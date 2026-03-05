@@ -8,6 +8,7 @@ from agentforge.sidecar.agentd.api.approvals_api import approve_approval
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
 from agentforge.sidecar.agentd.broker.events_store import append_run_event, create_run_event
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
+from agentforge.sidecar.core.contracts.operator_auth_v1 import OperatorAuthContextV1
 from agentforge.sidecar.core.contracts.tool_contract_v1 import ToolCallRequestV1
 from agentforge.sidecar.workbench import (
     build_approval_modal,
@@ -88,7 +89,11 @@ def test_approval_modal_projection(tmp_path: Path) -> None:
     record = gateway.request(request)
     modal = build_approval_modal(runs_root)
     assert modal.approvals[0].approval_id == record.approval_id
-    approve_approval(runs_root, record.approval_id)
+    approve_approval(
+        runs_root,
+        record.approval_id,
+        auth_context=OperatorAuthContextV1(operator_id="operator_1", scopes=["approvals:write"]),
+    )
     assert build_approval_modal(runs_root).approvals == []
 
 

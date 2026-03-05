@@ -2,6 +2,7 @@
 
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType, RunEventV1, RunEventsPageV1
 from agentforge.sidecar.core.contracts.audit_v1 import AuditEventV1
+from agentforge.sidecar.core.contracts.operator_auth_v1 import OperatorAuthContextV1
 from agentforge.sidecar.core.contracts.approval_v1 import (
     ApprovalListV1,
     ApprovalRecordV1,
@@ -22,6 +23,7 @@ from agentforge.sidecar.core.contracts.tool_contract_v1 import (
 __all__ = [
     "ApprovalListV1",
     "AuditEventV1",
+    "OperatorAuthContextV1",
     "ApprovalRecordV1",
     "ApprovalTokenStatus",
     "ApprovalTokenValidationV1",

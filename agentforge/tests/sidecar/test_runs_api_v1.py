@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from agentforge.sidecar.agentd.api.authz_v1 import OperatorAuthorizationError
 from agentforge.sidecar.agentd.api.events_api import get_run_timeline
 from agentforge.sidecar.agentd.api.runs_api import (
     cancel_run,
@@ -12,8 +15,10 @@ from agentforge.sidecar.agentd.api.runs_api import (
     pause_run,
     resume_run,
 )
+from agentforge.sidecar.agentd.broker.audit_store_v1 import load_audit_events
 from agentforge.sidecar.agentd.broker.events_store import append_run_event, create_run_event
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
+from agentforge.sidecar.core.contracts.operator_auth_v1 import OperatorAuthContextV1
 
 
 def test_get_run_returns_safe_defaults_when_control_files_missing(tmp_path: Path) -> None:
@@ -101,11 +106,12 @@ def test_get_run_timeline_returns_normalized_summary_and_cursor(tmp_path: Path) 
 def test_run_control_state_transitions_are_persistent_and_idempotent(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
     run_id = "run_control"
+    auth_context = OperatorAuthContextV1(operator_id="operator_1", scopes=["runs:control"])
 
-    paused_first = pause_run(runs_root, run_id=run_id)
-    paused_second = pause_run(runs_root, run_id=run_id)
-    resumed = resume_run(runs_root, run_id=run_id)
-    cancelled = cancel_run(runs_root, run_id=run_id)
+    paused_first = pause_run(runs_root, run_id=run_id, auth_context=auth_context)
+    paused_second = pause_run(runs_root, run_id=run_id, auth_context=auth_context)
+    resumed = resume_run(runs_root, run_id=run_id, auth_context=auth_context)
+    cancelled = cancel_run(runs_root, run_id=run_id, auth_context=auth_context)
 
     assert paused_first.changed is True
     assert paused_second.changed is False
@@ -118,3 +124,38 @@ def test_run_control_state_transitions_are_persistent_and_idempotent(tmp_path: P
 
     detail = get_run(runs_root, run_id=run_id)
     assert detail.status == "cancelled"
+
+
+def test_run_control_denies_unauthorized_mutation_without_state_change(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    run_id = "run_control_noauth"
+    control_path = runs_root / run_id / "control" / "run_control.json"
+
+    with pytest.raises(OperatorAuthorizationError, match="Missing operator auth context."):
+        pause_run(runs_root, run_id=run_id)
+
+    assert not control_path.exists()
+    denied_events = [
+        event
+        for event in load_audit_events(runs_root)
+        if event.reason_code == "OPERATOR_UNAUTHORIZED"
+    ]
+    assert denied_events
+
+
+def test_run_control_denies_forbidden_operator_scope_without_state_change(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    run_id = "run_control_forbidden"
+    control_path = runs_root / run_id / "control" / "run_control.json"
+    wrong_scope = OperatorAuthContextV1(operator_id="operator_2", scopes=["approvals:write"])
+
+    with pytest.raises(OperatorAuthorizationError, match="lacks scope 'runs:control'"):
+        pause_run(runs_root, run_id=run_id, auth_context=wrong_scope)
+
+    assert not control_path.exists()
+    denied_events = [
+        event
+        for event in load_audit_events(runs_root)
+        if event.reason_code == "OPERATOR_FORBIDDEN"
+    ]
+    assert denied_events
