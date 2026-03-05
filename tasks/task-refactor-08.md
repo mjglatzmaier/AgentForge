@@ -47,6 +47,24 @@ Use a single “analyze + gated action” flow:
    - same input + policy snapshot -> same node states and equivalent artifact names/paths
 6. Document pilot runbook + pass/fail gates in this task (or linked docs section).
 
+## Pilot Runbook (v1)
+
+Use this as the repeatable validation gate for this task:
+
+1. Execute the pilot tests:
+   - `source .venv/bin/activate && python -m pytest agentforge/tests/sidecar/test_crosscut_pilot_v1.py`
+2. Execute full regression suite:
+   - `source .venv/bin/activate && python -m pytest`
+3. Verify deny and allow branches in pilot test results:
+   - deny branch blocks connector invocation after operator deny
+   - allow branch requires approval token and then executes connector path
+4. Verify observability and safety assertions in pilot test results:
+   - ordered run events and audit decisions are present
+   - sensitive fields are redacted in persisted events/audit logs
+   - artifact listing enforces path sandbox behavior
+5. Verify deterministic replay assertion:
+   - same policy snapshot + same input produces equivalent node states and artifact names/paths across replay runs
+
 ## Pass/Fail Gates
 
 - **Pass**:
