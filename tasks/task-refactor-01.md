@@ -29,14 +29,14 @@ policy.md
 ---
 
 ## 0.1 Event Model v1 (append-only, audit-friendly)
-- [ ] Define event schema (JSON objects; append-only JSONL per run)
+- [X] Define event schema (JSON objects; append-only JSONL per run)
   - `RunStarted`, `StepStarted`, `ToolCallRequested`, `ApprovalRequested`,
     `ToolCallCompleted`, `ArtifactWritten`, `StepCompleted`,
     `RunCompleted`, `RunFailed`
-- [ ] Implement event writer:
+- [X] Implement event writer:
   - write to `runs/<run_id>/events.jsonl`
   - optionally index metadata in SQLite for fast listing
-- [ ] Implement read APIs:
+- [X] Implement read APIs:
   - `GET /runs/{run_id}/events` (paged)
   - `WS /events/stream` (push live events)
 

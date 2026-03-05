@@ -86,8 +86,8 @@ OS support:
 
 - Repository: `AgentForge`
 - Model: `GPT-5.3-Codex`
-- Task ID: `[TASK_ID]`
-- Source of truth file: `[SOURCE_FILE.md]`
+- Task ID: `[0.1]`
+- Source of truth file: `tasks/task-refactor-01.md`
 - Scope boundary: `Implement only this task; no extra features.`
 
 ---
@@ -133,8 +133,8 @@ You are working in the AgentForge repository.
 Use model: GPT-5.3-Codex.
 
 Task:  
-Complete EXACTLY task ID: `[TASK_ID]`  
-Source of truth file: `[SOURCE_FILE.md]`  
+Complete EXACTLY task ID: `[0.1]`  
+Source of truth file: `tasks/task-refactor-01.md`
 Do NOT implement anything beyond this task.
 
 Follow all contracts, constraints, implementation rules, and final response format in `tasks/task-template.md`.
