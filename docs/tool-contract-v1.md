@@ -1,151 +1,148 @@
-# tool-contract-v1.md: Kernel ↔ Broker ↔ Connector Contract
+# tool-contract.md (v1): ToolSpec + Tool Calls + Capabilities
 
-## Purpose
-
-Define a minimal, typed, versioned contract for invoking connector operations from the kernel through a broker.  
-This contract is transport-agnostic (local HTTP, Unix socket, Named Pipe, gRPC wrapper, etc.).
-
-## Design Constraints
-
-- Deterministic and replay-safe.
-- Deny-by-default: every operation must map to a declared capability.
-- No secret material in payloads or logs.
-- Portable across macOS/Linux/Windows.
+## Principles
+- Agents do not execute arbitrary shell by default.
+- Agents may request tool operations via the kernel (agentd).
+- Kernel enforces capabilities + approval gates before dispatching calls.
+- Tools are user-space services (separate processes) that expose versioned operations.
 
 ---
 
-## Core Entities
+## Capability Model
+Capabilities are strings in a controlled namespace.
 
-- **Kernel**: control plane decision point (policy, approvals, scheduling).
-- **Broker**: routes typed requests/events; preserves correlation metadata.
-- **Connector Service**: executes a bounded operation against an external system.
+Examples:
+- `gmail.read.metadata`
+- `gmail.read.body`
+- `gmail.send`
+- `exchange.read`
+- `exchange.place_order`
+- `net.fetch:https://news.example.com/*`
+- `fs.read:runs/*`
+
+Capabilities are granted per agent identity via policy.
 
 ---
 
-## Request Envelope (v1)
+## ToolSpec (manifest)
+Each tool service provides a ToolSpec that declares its operations and requirements.
 
+### ToolSpec JSON (example)
 ```json
 {
-  "schema_version": 1,
-  "request_id": "req_01HV...",
-  "run_id": "run_20260305_abc123",
-  "node_id": "node_fetch_prices",
-  "agent_id": "market.scanner.v1",
-  "capability": "exchange.read",
-  "operation": "exchange.get_ticker",
-  "idempotency_key": "run_20260305_abc123:node_fetch_prices:exchange.get_ticker",
-  "deadline_utc": "2026-03-05T02:00:00Z",
-  "input": {
-    "symbol": "BTC-USD"
-  },
-  "policy_context": {
-    "policy_snapshot_id": "pol_2026-03-05_a1",
-    "approval_token": null
-  },
-  "trace": {
-    "correlation_id": "corr_...",
-    "causation_id": "evt_..."
-  }
-}
-```
-
-### Required validation
-
-- `schema_version == 1`
-- `operation` must be declared by the target connector.
-- `capability` must satisfy policy for `agent_id`.
-- `deadline_utc` must be in the future and bounded by kernel timeout policy.
-- `idempotency_key` required for non-read operations.
-
----
-
-## Response Envelope (v1)
-
-```json
-{
-  "schema_version": 1,
-  "request_id": "req_01HV...",
-  "status": "ok",
-  "output": {
-    "price": 64890.2,
-    "as_of_utc": "2026-03-05T01:59:59Z"
-  },
-  "artifacts": [
+  "tool_name": "gmaild",
+  "tool_version": "1.0.0",
+  "ops": [
     {
-      "name": "ticker-snapshot",
-      "type": "application/json",
-      "path": "steps/02_node_fetch_prices/outputs/ticker.json"
+      "op_id": "gmail.list_messages",
+      "input_schema": "GmailListMessagesIn",
+      "output_schema": "GmailListMessagesOut",
+      "required_capabilities": ["gmail.read.metadata"],
+      "approval_required": false
+    },
+    {
+      "op_id": "gmail.get_message_body",
+      "input_schema": "GmailGetMessageBodyIn",
+      "output_schema": "GmailGetMessageBodyOut",
+      "required_capabilities": ["gmail.read.body"],
+      "approval_required": true
+    },
+    {
+      "op_id": "gmail.send_draft",
+      "input_schema": "GmailSendDraftIn",
+      "output_schema": "GmailSendDraftOut",
+      "required_capabilities": ["gmail.send"],
+      "approval_required": true
     }
-  ],
-  "metrics": {
-    "latency_ms": 128
-  },
-  "trace": {
-    "correlation_id": "corr_..."
-  }
+  ]
 }
-```
 
-`status` values:
-- `ok`
-- `error`
-- `denied`
-- `approval_required`
-- `timeout`
+Notes:
 
----
+input_schema / output_schema are schema IDs that map to Pydantic models in code.
 
-## Error Taxonomy (bounded)
+approval_required indicates the kernel must request explicit approval before dispatch.
 
-Standard error shape:
+Tool Call Envelope (kernel → tool service)
 
-```json
+Kernel dispatches a tool call to a tool service with a standard envelope.
+
+ToolCallRequest
+
 {
-  "code": "POLICY_DENIED",
-  "message": "operation not allowed by current policy",
-  "retryable": false,
-  "details": {
-    "operation": "exchange.place_order"
-  }
+  "request_id": "req_01HZY...",
+  "run_id": "run_2026-03-04_...",
+  "agent_id": "crypto.swing.v2",
+  "op_id": "gmail.list_messages",
+  "args": { "query": "is:unread", "max_results": 20 },
+  "policy_snapshot_id": "pol_...",
+  "issued_at": "2026-03-04T20:15:00Z"
 }
-```
 
-Allowed `code` values in v1:
-- `INVALID_REQUEST`
-- `POLICY_DENIED`
-- `APPROVAL_REQUIRED`
-- `CONNECTOR_UNAVAILABLE`
-- `CONNECTOR_TIMEOUT`
-- `UPSTREAM_ERROR`
-- `RATE_LIMITED`
-- `INTERNAL_ERROR`
+ToolCallResponse
 
----
+{
+  "request_id": "req_01HZY...",
+  "ok": true,
+  "result": { "messages": [ { "id": "18c...", "from": "x@y.com", "subject": "...", "snippet": "..." } ] },
+  "error": null,
+  "completed_at": "2026-03-04T20:15:01Z"
+}
 
-## Broker Event Requirements
+If ok=false, return:
 
-Every request/response pair must emit structured broker events:
+{
+  "request_id": "req_...",
+  "ok": false,
+  "result": null,
+  "error": { "code": "GMAIL_AUTH_REQUIRED", "message": "OAuth token missing/expired" },
+  "completed_at": "..."
+}
 
-- `tool.requested`
-- `tool.approval_required` (optional)
-- `tool.started`
-- `tool.completed` or `tool.failed`
+Approval Protocol (kernel internal)
 
-Each event must include: `event_id`, `timestamp_utc`, `request_id`, `run_id`, `node_id`, `agent_id`, `operation`, and trace correlation fields.
+If an op is approval-required, kernel emits an approval event before dispatch.
 
----
+ApprovalRequested event payload (example)
 
-## Security Requirements
+{
+  "approval_id": "appr_01HZ...",
+  "run_id": "run_...",
+  "agent_id": "gmail.triage",
+  "op_id": "gmail.send_draft",
+  "summary": "Send draft to boss@company.com subject='Re: Update'",
+  "requested_at": "2026-03-04T20:20:00Z"
+}
 
-- Connector auth tokens/keys never traverse this contract.
-- Payload and logs must redact sensitive fields by policy.
-- Kernel enforces operation-level allowlist before broker dispatch.
-- Approval tokens are opaque, short-lived, and single-use unless policy explicitly allows run-scoped approval.
+Kernel will only dispatch the tool call after explicit approve.
 
----
+Redaction Rules (recommended)
 
-## Compatibility
+Tool responses may include sensitive content; kernel should support per-op redaction.
 
-- v1 is additive-only for minor revisions.
-- Breaking changes require `schema_version: 2`.
-- Connectors should ignore unknown fields to allow forward-compatible evolution.
+Default:
+
+store full content as an artifact file with restricted permissions
+
+store only hashes/metadata in event log
+
+Approval UI shows summarized, non-sensitive previews.
+
+Service Transport
+
+v1 recommended:
+
+localhost HTTP (FastAPI) for each service (simple)
+
+kernel calls services via allowlisted localhost endpoints
+
+Later:
+
+switch to gRPC for strict IDL + better C client ergonomics
+
+Non-goals (v1)
+
+perfect sandboxing (containers) — can be added later
+
+distributed execution — local-first
+
