@@ -87,14 +87,14 @@ policy.md
 ---
 
 ## 0.5 Gmail connector service (gmaild) — safe-by-default
-- [ ] `agentctl auth gmail` (or `gmaild auth`) does OAuth and stores tokens in OS keychain (`keyring`)
-- [ ] Tool ops:
+- [X] `agentctl auth gmail` (or `gmaild auth`) does OAuth and stores tokens in OS keychain (`keyring`)
+- [X] Tool ops:
   - `list_messages(query, max)` → metadata+snippet only
   - `get_message_metadata(message_id)` → headers only
   - `get_message_body(message_id)` → body (approval-required)
   - `create_draft(to, subject, body)` → draft_id (approval-required optional)
   - `send_draft(draft_id)` → message_id (approval-required)
-- [ ] Default behavior:
+- [X] Default behavior:
   - metadata-first, body on-demand
   - never auto-send
 
