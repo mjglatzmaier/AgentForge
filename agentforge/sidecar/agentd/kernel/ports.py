@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from agentforge.sidecar.core.policy.decision import PolicyDecisionResult
 
 class PolicyEngine(Protocol):
     """Decides whether a requested operation is allowed."""
 
-    def evaluate(self, request: dict[str, Any]) -> str: ...
+    def evaluate(self, *, agent_id: str, capability: str, operation: str) -> PolicyDecisionResult: ...
 
 
 class ApprovalGateway(Protocol):
@@ -27,4 +28,3 @@ class ConnectorInvoker(Protocol):
     """Invokes typed connector operations."""
 
     def invoke(self, request: dict[str, Any]) -> dict[str, Any]: ...
-

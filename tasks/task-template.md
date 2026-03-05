@@ -86,7 +86,7 @@ OS support:
 
 - Repository: `AgentForge`
 - Model: `GPT-5.3-Codex`
-- Task ID: `[0.2]`
+- Task ID: `[0.3]`
 - Source of truth file: `tasks/task-refactor-01.md`
 - Scope boundary: `Implement only this task; no extra features.`
 
@@ -133,7 +133,7 @@ You are working in the AgentForge repository.
 Use model: GPT-5.3-Codex.
 
 Task:  
-Complete EXACTLY task ID: `[0.2]`  
+Complete EXACTLY task ID: `[0.3]`  
 Source of truth file: `tasks/task-refactor-01.md`
 Do NOT implement anything beyond this task.
 

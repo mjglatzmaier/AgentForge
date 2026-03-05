@@ -15,6 +15,7 @@ from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolOperationSpecV1,
     ToolSpecV1,
 )
+from agentforge.sidecar.core.policy.engine_v1 import PolicyEngineV1
 
 _SCHEMA_TYPE_MAP: dict[str, type[Any]] = {
     "str": str,
@@ -35,19 +36,54 @@ class ToolBrokerV1:
         runs_root: str | Path,
         tool_spec: ToolSpecV1,
         connector_invoker: Any,
+        policy_engine: PolicyEngineV1 | None = None,
     ) -> None:
         self._runs_root = Path(runs_root)
         self._tool_spec = tool_spec
         self._connector_invoker = connector_invoker
+        self._policy_engine = policy_engine
 
     def dispatch(
         self,
         request: ToolCallRequestV1,
         *,
-        allowed_capabilities: list[str],
+        allowed_capabilities: list[str] | None = None,
     ) -> ToolCallResponseV1:
         run_dir = self._runs_root / request.run_id
         self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_REQUESTED)
+
+        if self._policy_engine is not None:
+            policy_decision = self._policy_engine.evaluate(
+                agent_id=request.agent_id,
+                capability=request.capability,
+                operation=request.operation,
+            )
+            if policy_decision.decision == "deny":
+                response = ToolCallResponseV1(
+                    request_id=request.request_id,
+                    status="denied",
+                    error=ToolCallErrorV1(
+                        code="POLICY_DENIED",
+                        message=f"Denied by policy ({policy_decision.reason_code}).",
+                        retryable=False,
+                        details={"policy_snapshot_id": policy_decision.policy_snapshot_id},
+                    ),
+                )
+                self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
+                return response
+            if policy_decision.decision == "require_approval":
+                response = ToolCallResponseV1(
+                    request_id=request.request_id,
+                    status="approval_required",
+                    error=ToolCallErrorV1(
+                        code="APPROVAL_REQUIRED",
+                        message=f"Approval required by policy ({policy_decision.reason_code}).",
+                        retryable=False,
+                        details={"policy_snapshot_id": policy_decision.policy_snapshot_id},
+                    ),
+                )
+                self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
+                return response
 
         operation = self._tool_spec.operation_by_id(request.operation)
         if operation is None:
@@ -189,9 +225,12 @@ class ToolBrokerV1:
         *,
         request: ToolCallRequestV1,
         operation: ToolOperationSpecV1,
-        allowed_capabilities: list[str],
+        allowed_capabilities: list[str] | None,
     ) -> ToolCallErrorV1 | None:
-        allowed = {value.strip() for value in allowed_capabilities if value.strip()}
+        if allowed_capabilities is None:
+            allowed = {request.capability}
+        else:
+            allowed = {value.strip() for value in allowed_capabilities if value.strip()}
         if request.capability not in allowed:
             return ToolCallErrorV1(
                 code="POLICY_DENIED",

@@ -59,14 +59,14 @@ policy.md
 ---
 
 ## 0.3 Policy Engine v1 (caps + approvals + limits)
-- [ ] Define `AgentIdentity`:
+- [X] Define `AgentIdentity`:
   - `agent_id`, `role`, allowed capabilities
-- [ ] Define policy config file (YAML or JSON):
+- [X] Define policy config file (YAML or JSON):
   - allowed caps per agent
   - approval rules per tool op
   - rate limits (per tool/agent)
   - domain allowlists (for any net fetch tool)
-- [ ] Enforce policy inside kernel before tool call dispatch
+- [X] Enforce policy inside kernel before tool call dispatch
 
 **Deliverable:** same agent behaves differently under different policy snapshots.
 

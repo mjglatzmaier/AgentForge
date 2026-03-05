@@ -11,6 +11,7 @@ from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolOperationSpecV1,
     ToolSpecV1,
 )
+from agentforge.sidecar.core.policy import PolicyConfigV1, PolicyEngineV1
 
 
 class _FakeInvoker:
@@ -109,3 +110,63 @@ def test_tool_broker_rejects_bad_input_schema(tmp_path: Path) -> None:
     assert response.error.code == "INVALID_REQUEST"
     assert invoker.calls == 0
 
+
+def test_tool_broker_enforces_policy_denial_before_invocation(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_deny",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "reader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "approval_required_ops": [],
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    denied_request = _request().model_copy(update={"capability": "exchange.place_order"})
+    response = broker.dispatch(denied_request)
+    assert response.status == "denied"
+    assert response.error is not None
+    assert response.error.code == "POLICY_DENIED"
+    assert invoker.calls == 0
+
+
+def test_tool_broker_returns_approval_required_when_policy_demands_it(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_approval",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "trader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "approval_required_ops": ["exchange.get_ticker"],
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    response = broker.dispatch(_request())
+    assert response.status == "approval_required"
+    assert response.error is not None
+    assert response.error.code == "APPROVAL_REQUIRED"
+    assert invoker.calls == 0
