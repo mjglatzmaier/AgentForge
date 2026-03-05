@@ -30,13 +30,50 @@ Discard if they:
 
 ## Implementation Checklist
 
-1. Inventory Lumen modules (renderer, scheduler, containers, memory, input) and map to AgentForge needs.
-2. Extract required view-model/interface ideas into side-car workbench contracts.
-3. Define Dear ImGui client spike plan:
-   - fetch runs/events/approvals/artifacts from `agentd`
-   - render timeline + approval modal + artifact panel
-4. Keep submodule temporary; produce a post-harvest remove plan.
-5. Add tests for API projection correctness in Python side-car layer.
+- [X] Inventory Lumen modules (renderer, scheduler, containers, memory, input) and map to AgentForge needs.
+- [X] Extract required view-model/interface ideas into side-car workbench contracts.
+- [X] Define Dear ImGui client spike plan:
+  - fetch runs/events/approvals/artifacts from `agentd`
+  - render timeline + approval modal + artifact panel
+- [X] Keep submodule temporary; produce a post-harvest remove plan.
+- [X] Add tests for API projection correctness in Python side-car layer.
+
+## Harvest Matrix (v1, completed)
+
+| Lumen area | Decision | AgentForge target | Rationale |
+| --- | --- | --- | --- |
+| Timeline visualization patterns | Keep (concept) | `agentforge/sidecar/workbench/lumen_projection_v1.py` + `GET /runs/{run_id}/timeline` | Direct UX value for run/event observability with no renderer coupling. |
+| Approval interaction patterns | Keep (concept) | `agentforge/sidecar/agentd/api/approvals_api.py` + workbench approval modal projection | Maps cleanly to policy-gated approve/deny flow. |
+| Artifact browsing patterns | Keep (concept) | `agentforge/sidecar/agentd/api/artifacts_api.py` + artifact viewer projection | Useful and language-agnostic with sandbox-safe file access. |
+| Scheduling visuals concepts | Keep (concept) | run graph/detail/timeline APIs (`runs_api.py`, `events_api.py`) | Reused as data-contract ideas only; no engine loop adoption. |
+| Renderer/Vulkan/GLFW runtime | Discard | N/A | Heavy engine/runtime coupling; violates low-friction cross-platform scope. |
+| Engine containers/memory allocators | Discard | N/A | Not needed for Python-first sidecar and duplicates simpler runtime assumptions. |
+| Input/game-loop subsystem | Discard | N/A | Dear ImGui client can handle input independently of kernel/control plane. |
+
+## Dear ImGui Client Spike Plan (implementation-ready)
+
+1. Build a thin native client that only calls local `agentd` APIs:
+   - `GET /runs`, `GET /runs/{run_id}`, `GET /runs/{run_id}/graph`
+   - `GET /runs/{run_id}/timeline`, `GET /approvals`, `GET /runs/{run_id}/artifacts`
+   - mutation calls: approvals + run control
+2. Implement three first-class panels:
+   - Runs/Graph panel
+   - Timeline panel (cursor polling with optional stream)
+   - Approval modal + artifact viewer panel
+3. Keep all policy/approval/security enforcement in `agentd`; client remains presentation-only.
+
+## Post-Harvest Remove Plan (completed)
+
+1. Harvest concepts/contracts into sidecar APIs and workbench projections.
+2. Verify no runtime dependency on submodule remains in source tree.
+3. Remove temporary Lumen submodule and keep API contracts stable.
+4. Validate regression safety with sidecar/workbench test coverage.
+
+## Verification Notes
+
+- Projection/API correctness covered by sidecar tests, including:
+  - `agentforge/tests/sidecar/test_workbench_v1.py`
+  - `agentforge/tests/sidecar/test_runs_api_v1.py`
 
 ## Acceptance Criteria
 

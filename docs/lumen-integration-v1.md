@@ -9,7 +9,7 @@ Lumen does **not** execute tools, run connectors, or hold secrets.
 
 ## Current Integration Strategy
 
-- Treat `agentforge/sidecar/submodules/lumen` as a temporary reference source.
+- Treat Lumen as a harvested-reference input only; no in-repo runtime submodule dependency.
 - Harvest only reusable UX/runtime patterns (timeline, approvals, artifact browsing, scheduling visuals).
 - Do not couple AgentForge kernel APIs to game-engine internals.
 - Keep workbench protocol stable so Lumen can be swapped with another client implementation if needed.

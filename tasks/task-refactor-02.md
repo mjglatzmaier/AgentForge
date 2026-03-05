@@ -18,17 +18,17 @@ Enforce security-first execution by making policy decisions and approvals mandat
 
 ## Implementation Checklist
 
-1. Add typed policy decision model (`allow`, `deny`, `require_approval` + reason code).
-2. Implement policy loader/validator for v1 YAML schema.
-3. Build approval store with TTL + single-use token semantics.
-4. Enforce operation constraints (domain allowlist, symbol/notional caps, recipient caps).
-5. Standardize connector error translation to bounded taxonomy.
-6. Add audits for all decisions and approval actions.
-7. Add tests:
-   - deny-by-default behavior
-   - approval-required branch
-   - constraint enforcement
-   - secret redaction in logs/events
+- [X] Add typed policy decision model (`allow`, `deny`, `require_approval` + reason code).
+- [X] Implement policy loader/validator for v1 YAML schema.
+- [X] Build approval store with TTL + single-use token semantics.
+- [X] Enforce operation constraints (domain allowlist, symbol/notional caps, recipient caps).
+- [X] Standardize connector error translation to bounded taxonomy.
+- [X] Add audits for all decisions and approval actions.
+- [X] Add tests:
+  - deny-by-default behavior
+  - approval-required branch
+  - constraint enforcement
+  - secret redaction in logs/events
 
 ## Acceptance Criteria
 
@@ -41,6 +41,6 @@ Enforce security-first execution by making policy decisions and approvals mandat
 
 Use these smaller tasks to reduce implementation friction and isolate risk:
 
-- `tasks/task-refactor-05.md` — approval token TTL + single-use hardening.
-- `tasks/task-refactor-06.md` — operation constraints + rate-limit enforcement.
-- `tasks/task-refactor-07.md` — audit logging, secret redaction, bounded error taxonomy.
+- `tasks/task-refactor-05.md` — approval token TTL + single-use hardening (**completed**).
+- `tasks/task-refactor-06.md` — operation constraints + rate-limit enforcement (**completed**).
+- `tasks/task-refactor-07.md` — audit logging, secret redaction, bounded error taxonomy (**completed**).
