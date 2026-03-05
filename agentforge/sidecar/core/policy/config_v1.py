@@ -37,6 +37,35 @@ class AgentIdentityV1(BaseModel):
         return normalized
 
 
+class OperationConstraintsV1(BaseModel):
+    """Per-operation policy constraints."""
+
+    domain_allowlist: list[str] = Field(default_factory=list)
+    recipient_allowlist: list[str] = Field(default_factory=list)
+    symbol_allowlist: list[str] = Field(default_factory=list)
+    max_notional_usd: float | None = None
+
+    @field_validator("domain_allowlist", "recipient_allowlist", "symbol_allowlist")
+    @classmethod
+    def validate_allowlists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            item_norm = item.strip().lower()
+            if not item_norm:
+                raise ValueError("Constraint allowlist entries must be non-empty.")
+            normalized.append(item_norm)
+        return normalized
+
+    @field_validator("max_notional_usd")
+    @classmethod
+    def validate_max_notional(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError("max_notional_usd must be > 0.")
+        return value
+
+
 class AgentPolicyV1(BaseModel):
     """Per-agent policy entry."""
 
@@ -44,6 +73,7 @@ class AgentPolicyV1(BaseModel):
     allowed_capabilities: list[str] = Field(default_factory=list)
     approval_required_ops: list[str] = Field(default_factory=list)
     rate_limits: dict[str, int] = Field(default_factory=dict)
+    constraints: dict[str, OperationConstraintsV1] = Field(default_factory=dict)
 
     @field_validator("role")
     @classmethod
@@ -74,6 +104,20 @@ class AgentPolicyV1(BaseModel):
                 raise ValueError("rate_limits keys must be non-empty.")
             if raw < 1:
                 raise ValueError("rate_limits values must be >= 1.")
+            normalized[key_norm] = raw
+        return normalized
+
+    @field_validator("constraints")
+    @classmethod
+    def validate_constraints(
+        cls,
+        value: dict[str, OperationConstraintsV1],
+    ) -> dict[str, OperationConstraintsV1]:
+        normalized: dict[str, OperationConstraintsV1] = {}
+        for key, raw in value.items():
+            key_norm = key.strip()
+            if not key_norm:
+                raise ValueError("constraints keys must be non-empty.")
             normalized[key_norm] = raw
         return normalized
 
@@ -134,4 +178,3 @@ def load_policy_config(path: str | Path) -> PolicyConfigV1:
     if not isinstance(payload, dict):
         raise ValueError("Policy config root must be a mapping.")
     return PolicyConfigV1.model_validate(payload)
-

@@ -17,15 +17,15 @@ Finish policy enforcement by applying operation-level constraints and rate limit
 
 ## Implementation Checklist
 
-1. Extend policy config schema with normalized `constraints` map per operation.
-2. Implement constraint evaluator in policy engine (deterministic pure checks).
-3. Add rate-limit state tracking (local snapshot/store) with deterministic keying.
-4. Wire policy evaluator results into broker denial path before connector invocation.
-5. Add tests:
-   - domain/recipient/symbol constraint denials,
-   - notional threshold denials,
-   - rate-limit exceed denials,
-   - allowed path still executes successfully.
+- [X] Extend policy config schema with normalized `constraints` map per operation.
+- [X] Implement constraint evaluator in policy engine (deterministic pure checks).
+- [X] Add rate-limit state tracking (local snapshot/store) with deterministic keying.
+- [X] Wire policy evaluator results into broker denial path before connector invocation.
+- [X] Add tests:
+  - domain/recipient/symbol constraint denials,
+  - notional threshold denials,
+  - rate-limit exceed denials,
+  - allowed path still executes successfully.
 
 ## Acceptance Criteria
 

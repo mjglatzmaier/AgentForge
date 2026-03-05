@@ -59,6 +59,29 @@ def _spec(*, retries: int = 0, timeout_s: float = 1.0) -> ToolSpecV1:
     )
 
 
+def _single_operation_spec(
+    *,
+    op_id: str,
+    required_capability: str,
+    input_schema: dict[str, str],
+    output_schema: dict[str, str],
+) -> ToolSpecV1:
+    return ToolSpecV1(
+        name=f"{op_id}-tool",
+        version="1.0.0",
+        operations=[
+            ToolOperationSpecV1(
+                op_id=op_id,
+                required_capabilities=[required_capability],
+                input_schema=input_schema,
+                output_schema=output_schema,
+                timeout_s=1.0,
+                max_retries=0,
+            )
+        ],
+    )
+
+
 def test_tool_broker_dispatch_success_and_logs_events(tmp_path: Path) -> None:
     invoker = _FakeInvoker([{"output": {"price": 101.5}}])
     broker = ToolBrokerV1(runs_root=tmp_path / "runs", tool_spec=_spec(), connector_invoker=invoker)
@@ -267,3 +290,217 @@ def test_tool_broker_rejects_reused_approval_token(tmp_path: Path) -> None:
     assert reused_response.status == "denied"
     assert reused_response.error is not None
     assert reused_response.error.code == "APPROVAL_TOKEN_USED"
+
+
+def test_tool_broker_denies_when_domain_constraint_fails(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"body": "ok"}}])
+    request = ToolCallRequestV1(
+        request_id="req_domain_1",
+        run_id="run_domain_1",
+        node_id="node_domain_1",
+        agent_id="agent_1",
+        capability="net.read",
+        operation="net.fetch",
+        input={"url": "https://evil.example/path"},
+        trace={"correlation_id": "corr_domain_1"},
+    )
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_domain",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "reader",
+                    "allowed_capabilities": ["net.read"],
+                    "constraints": {"net.fetch": {"domain_allowlist": ["example.com"]}},
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_single_operation_spec(
+            op_id="net.fetch",
+            required_capability="net.read",
+            input_schema={"url": "str"},
+            output_schema={"body": "str"},
+        ),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    response = broker.dispatch(request, allowed_capabilities=["net.read"])
+    assert response.status == "denied"
+    assert response.error is not None
+    assert response.error.code == "CONSTRAINT_DOMAIN_NOT_ALLOWED"
+    assert invoker.calls == 0
+
+
+def test_tool_broker_denies_when_recipient_constraint_fails(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"message_id": "msg_1"}}])
+    request = ToolCallRequestV1(
+        request_id="req_recipient_1",
+        run_id="run_recipient_1",
+        node_id="node_recipient_1",
+        agent_id="agent_1",
+        capability="email.send",
+        operation="gmail.send",
+        input={"to": "blocked@example.com"},
+        trace={"correlation_id": "corr_recipient_1"},
+    )
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_recipient",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "mailer",
+                    "allowed_capabilities": ["email.send"],
+                    "constraints": {
+                        "gmail.send": {"recipient_allowlist": ["allowed@example.com"]}
+                    },
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_single_operation_spec(
+            op_id="gmail.send",
+            required_capability="email.send",
+            input_schema={"to": "str"},
+            output_schema={"message_id": "str"},
+        ),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    response = broker.dispatch(request, allowed_capabilities=["email.send"])
+    assert response.status == "denied"
+    assert response.error is not None
+    assert response.error.code == "CONSTRAINT_RECIPIENT_NOT_ALLOWED"
+    assert invoker.calls == 0
+
+
+def test_tool_broker_denies_when_symbol_or_notional_constraint_fails(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"order_id": "ord_1"}}])
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_trade_constraints",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "trader",
+                    "allowed_capabilities": ["exchange.trade"],
+                    "constraints": {
+                        "exchange.place_order": {
+                            "symbol_allowlist": ["btc-usd"],
+                            "max_notional_usd": 1000.0,
+                        }
+                    },
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_single_operation_spec(
+            op_id="exchange.place_order",
+            required_capability="exchange.trade",
+            input_schema={"symbol": "str", "notional_usd": "float"},
+            output_schema={"order_id": "str"},
+        ),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    symbol_denied = broker.dispatch(
+        ToolCallRequestV1(
+            request_id="req_trade_symbol_1",
+            run_id="run_trade_1",
+            node_id="node_trade_1",
+            agent_id="agent_1",
+            capability="exchange.trade",
+            operation="exchange.place_order",
+            input={"symbol": "eth-usd", "notional_usd": 500.0},
+            trace={"correlation_id": "corr_trade_symbol_1"},
+        ),
+        allowed_capabilities=["exchange.trade"],
+    )
+    assert symbol_denied.status == "denied"
+    assert symbol_denied.error is not None
+    assert symbol_denied.error.code == "CONSTRAINT_SYMBOL_NOT_ALLOWED"
+
+    notional_denied = broker.dispatch(
+        ToolCallRequestV1(
+            request_id="req_trade_notional_1",
+            run_id="run_trade_2",
+            node_id="node_trade_2",
+            agent_id="agent_1",
+            capability="exchange.trade",
+            operation="exchange.place_order",
+            input={"symbol": "btc-usd", "notional_usd": 5000.0},
+            trace={"correlation_id": "corr_trade_notional_1"},
+        ),
+        allowed_capabilities=["exchange.trade"],
+    )
+    assert notional_denied.status == "denied"
+    assert notional_denied.error is not None
+    assert notional_denied.error.code == "CONSTRAINT_NOTIONAL_EXCEEDED"
+    assert invoker.calls == 0
+
+
+def test_tool_broker_enforces_rate_limit_then_allows_valid_path(tmp_path: Path) -> None:
+    invoker = _FakeInvoker(
+        [
+            {"output": {"price": 101.0}},
+            {"output": {"price": 102.0}},
+            {"output": {"price": 103.0}},
+        ]
+    )
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_rate_limit",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "reader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "rate_limits": {"exchange.get_ticker": 2},
+                    "constraints": {
+                        "exchange.get_ticker": {"symbol_allowlist": ["btc-usd", "eth-usd"]}
+                    },
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+    )
+
+    first = broker.dispatch(
+        _request().model_copy(update={"request_id": "req_rate_1", "input": {"symbol": "btc-usd"}}),
+        allowed_capabilities=["exchange.read"],
+    )
+    second = broker.dispatch(
+        _request().model_copy(update={"request_id": "req_rate_2", "input": {"symbol": "eth-usd"}}),
+        allowed_capabilities=["exchange.read"],
+    )
+    third = broker.dispatch(
+        _request().model_copy(update={"request_id": "req_rate_3", "input": {"symbol": "btc-usd"}}),
+        allowed_capabilities=["exchange.read"],
+    )
+
+    assert first.status == "ok"
+    assert second.status == "ok"
+    assert third.status == "denied"
+    assert third.error is not None
+    assert third.error.code == "RATE_LIMIT_EXCEEDED"
+    assert invoker.calls == 2

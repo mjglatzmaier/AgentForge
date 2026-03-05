@@ -2,6 +2,7 @@
 
 from agentforge.sidecar.core.policy.config_v1 import (
     AgentIdentityV1,
+    OperationConstraintsV1,
     AgentPolicyV1,
     PolicyConfigV1,
     PolicyDefaultsV1,
@@ -12,6 +13,7 @@ from agentforge.sidecar.core.policy.engine_v1 import PolicyEngineV1
 
 __all__ = [
     "AgentIdentityV1",
+    "OperationConstraintsV1",
     "AgentPolicyV1",
     "PolicyConfigV1",
     "PolicyDecision",

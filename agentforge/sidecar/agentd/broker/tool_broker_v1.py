@@ -219,6 +219,45 @@ class ToolBrokerV1:
             self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
             return response
 
+        if self._policy_engine is not None:
+            constraint_decision = self._policy_engine.evaluate_constraints(
+                agent_id=request.agent_id,
+                operation=request.operation,
+                input_payload=request.input,
+            )
+            if constraint_decision.decision == "deny":
+                response = ToolCallResponseV1(
+                    request_id=request.request_id,
+                    status="denied",
+                    error=ToolCallErrorV1(
+                        code=constraint_decision.reason_code,
+                        message=f"Denied by operation constraints ({constraint_decision.reason_code}).",
+                        retryable=False,
+                        details={"policy_snapshot_id": constraint_decision.policy_snapshot_id},
+                    ),
+                )
+                self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
+                return response
+
+            rate_limit_decision = self._policy_engine.evaluate_rate_limit(
+                agent_id=request.agent_id,
+                operation=request.operation,
+                request_id=request.request_id,
+            )
+            if rate_limit_decision.decision == "deny":
+                response = ToolCallResponseV1(
+                    request_id=request.request_id,
+                    status="denied",
+                    error=ToolCallErrorV1(
+                        code=rate_limit_decision.reason_code,
+                        message=f"Denied by rate limit ({rate_limit_decision.reason_code}).",
+                        retryable=False,
+                        details={"policy_snapshot_id": rate_limit_decision.policy_snapshot_id},
+                    ),
+                )
+                self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
+                return response
+
         response = self._invoke_with_retry(request=request, operation=operation)
         self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
         return response
