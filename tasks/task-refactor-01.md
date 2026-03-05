@@ -119,12 +119,12 @@ policy.md
 ---
 
 ## 0.7 Cross-platform packaging and dev workflow
-- [ ] `agentctl up` starts:
+- [X] `agentctl up` starts:
   - `agentd`
   - enabled connector services
-- [ ] `agentctl down` stops them
-- [ ] Localhost-only listening by default
-- [ ] Add `.env.example` for ports + paths
+- [X] `agentctl down` stops them
+- [X] Localhost-only listening by default
+- [X] Add `.env.example` for ports + paths
 
 **Deliverable:** works on macOS/Windows/Linux without OS-specific service install.
 
