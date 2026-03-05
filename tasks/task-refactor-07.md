@@ -17,15 +17,15 @@ Close the final security/operability gaps with centralized audit trails, guarant
 
 ## Implementation Checklist
 
-1. Add `AuditEvent` model with actor/run/request/decision/reason/timestamp fields.
-2. Add append-only audit store (JSONL) under sidecar runtime state.
-3. Add redaction helper with default sensitive-key patterns (`token`, `secret`, `api_key`, `authorization`).
-4. Integrate redaction into broker event payloads and approval/policy audit writes.
-5. Add connector error mapper (`INVALID_REQUEST`, `POLICY_DENIED`, `APPROVAL_REQUIRED`, `CONNECTOR_TIMEOUT`, `UPSTREAM_ERROR`, etc.).
-6. Add tests:
-   - audit events written for allow/deny/approval transitions,
-   - sensitive fields redacted in persisted events,
-   - exception mapping produces bounded error codes.
+- [X] Add `AuditEvent` model with actor/run/request/decision/reason/timestamp fields.
+- [X] Add append-only audit store (JSONL) under sidecar runtime state.
+- [X] Add redaction helper with default sensitive-key patterns (`token`, `secret`, `api_key`, `authorization`).
+- [X] Integrate redaction into broker event payloads and approval/policy audit writes.
+- [X] Add connector error mapper (`INVALID_REQUEST`, `POLICY_DENIED`, `APPROVAL_REQUIRED`, `CONNECTOR_TIMEOUT`, `UPSTREAM_ERROR`, etc.).
+- [X] Add tests:
+  - audit events written for allow/deny/approval transitions,
+  - sensitive fields redacted in persisted events,
+  - exception mapping produces bounded error codes.
 
 ## Acceptance Criteria
 

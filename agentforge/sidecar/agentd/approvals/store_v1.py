@@ -9,6 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
+from agentforge.sidecar.agentd.broker.audit_store_v1 import append_audit_event, create_audit_event
 from agentforge.sidecar.agentd.broker.events_store import append_run_event, create_run_event
 from agentforge.sidecar.core.contracts.approval_v1 import (
     ApprovalListV1,
@@ -58,6 +59,14 @@ class ApprovalGatewayV1:
         )
         approvals[approval_id] = created
         self._save_state(approvals, tokens)
+        self._append_audit_event(
+            actor=request.agent_id,
+            run_id=request.run_id,
+            request_id=request.request_id,
+            decision="require_approval",
+            reason_code="APPROVAL_REQUESTED",
+            details={"approval_id": approval_id, "operation": request.operation},
+        )
         return created
 
     def get(self, approval_id: str) -> ApprovalRecordV1 | None:
@@ -105,6 +114,17 @@ class ApprovalGatewayV1:
                     "operation": record.operation,
                 },
             )
+            self._append_audit_event(
+                actor="system.approvals",
+                run_id=record.run_id,
+                request_id=record.request_id,
+                decision="approved",
+                reason_code="APPROVAL_GRANTED",
+                details={
+                    "approval_id": record.approval_id,
+                    "approval_token": token.token_id,
+                },
+            )
         return record
 
     def deny(self, approval_id: str) -> ApprovalRecordV1:
@@ -123,6 +143,14 @@ class ApprovalGatewayV1:
                 event_type=RunEventType.APPROVAL_TOKEN_REJECTED,
                 payload={"approval_token": token_id, "reason_code": "APPROVAL_TOKEN_INVALID"},
             )
+            self._append_audit_event(
+                actor=request.agent_id,
+                run_id=request.run_id,
+                request_id=request.request_id,
+                decision="deny",
+                reason_code="APPROVAL_TOKEN_INVALID",
+                details={"approval_token": token_id},
+            )
             return ApprovalTokenValidationV1(valid=False, reason_code="APPROVAL_TOKEN_INVALID")
 
         if token.status is ApprovalTokenStatus.USED:
@@ -130,6 +158,14 @@ class ApprovalGatewayV1:
                 run_id=request.run_id,
                 event_type=RunEventType.APPROVAL_TOKEN_REJECTED,
                 payload={"approval_token": token_id, "reason_code": "APPROVAL_TOKEN_USED"},
+            )
+            self._append_audit_event(
+                actor=request.agent_id,
+                run_id=request.run_id,
+                request_id=request.request_id,
+                decision="deny",
+                reason_code="APPROVAL_TOKEN_USED",
+                details={"approval_token": token_id},
             )
             return ApprovalTokenValidationV1(valid=False, reason_code="APPROVAL_TOKEN_USED")
 
@@ -143,6 +179,14 @@ class ApprovalGatewayV1:
                 event_type=RunEventType.APPROVAL_TOKEN_EXPIRED,
                 payload={"approval_token": token_id, "approval_id": token.approval_id},
             )
+            self._append_audit_event(
+                actor=request.agent_id,
+                run_id=request.run_id,
+                request_id=request.request_id,
+                decision="deny",
+                reason_code="APPROVAL_TOKEN_EXPIRED",
+                details={"approval_token": token_id},
+            )
             return ApprovalTokenValidationV1(valid=False, reason_code="APPROVAL_TOKEN_EXPIRED")
 
         if not _token_matches_request(token, request):
@@ -150,6 +194,14 @@ class ApprovalGatewayV1:
                 run_id=request.run_id,
                 event_type=RunEventType.APPROVAL_TOKEN_REJECTED,
                 payload={"approval_token": token_id, "reason_code": "APPROVAL_TOKEN_CONTEXT_MISMATCH"},
+            )
+            self._append_audit_event(
+                actor=request.agent_id,
+                run_id=request.run_id,
+                request_id=request.request_id,
+                decision="deny",
+                reason_code="APPROVAL_TOKEN_CONTEXT_MISMATCH",
+                details={"approval_token": token_id},
             )
             return ApprovalTokenValidationV1(
                 valid=False,
@@ -182,6 +234,14 @@ class ApprovalGatewayV1:
                 "request_id": request.request_id,
             },
         )
+        self._append_audit_event(
+            actor=request.agent_id,
+            run_id=request.run_id,
+            request_id=request.request_id,
+            decision="allow",
+            reason_code="APPROVAL_TOKEN_USED",
+            details={"approval_token": consumed.token_id, "approval_id": consumed.approval_id},
+        )
         return ApprovalTokenValidationV1(valid=True, token=consumed)
 
     def _set_decision(self, approval_id: str, status: ApprovalStatus) -> ApprovalRecordV1:
@@ -198,6 +258,14 @@ class ApprovalGatewayV1:
             )
             approvals[approval_id] = record
             self._save_state(approvals, tokens)
+            self._append_audit_event(
+                actor="system.approvals",
+                run_id=record.run_id,
+                request_id=record.request_id,
+                decision="approved" if status is ApprovalStatus.APPROVED else "denied",
+                reason_code="APPROVAL_GRANTED" if status is ApprovalStatus.APPROVED else "APPROVAL_DENIED",
+                details={"approval_id": approval_id},
+            )
         return record
 
     def _load_state(self) -> tuple[dict[str, ApprovalRecordV1], dict[str, ApprovalTokenV1]]:
@@ -257,6 +325,26 @@ class ApprovalGatewayV1:
 
     def _now(self) -> datetime:
         return self._now_provider()
+
+    def _append_audit_event(
+        self,
+        *,
+        actor: str,
+        run_id: str | None,
+        request_id: str | None,
+        decision: str,
+        reason_code: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        event = create_audit_event(
+            actor=actor,
+            run_id=run_id,
+            request_id=request_id,
+            decision=decision,
+            reason_code=reason_code,
+            details=details,
+        )
+        append_audit_event(self._runs_root, event)
 
 
 def list_pending_approvals(runs_root: str | Path) -> ApprovalListV1:

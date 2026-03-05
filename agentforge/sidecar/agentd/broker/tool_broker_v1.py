@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from pathlib import Path
 from typing import Any, Mapping
 
+from agentforge.sidecar.agentd.broker.audit_store_v1 import append_audit_event, create_audit_event
+from agentforge.sidecar.agentd.broker.error_mapper_v1 import map_connector_exception
 from agentforge.sidecar.agentd.broker.events_store import append_run_event, create_run_event
 from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
@@ -17,6 +19,7 @@ from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolSpecV1,
 )
 from agentforge.sidecar.core.policy.engine_v1 import PolicyEngineV1
+from agentforge.sidecar.core.redaction_v1 import redact_sensitive_data
 
 _SCHEMA_TYPE_MAP: dict[str, type[Any]] = {
     "str": str,
@@ -62,6 +65,11 @@ class ToolBrokerV1:
                 operation=request.operation,
             )
             if policy_decision.decision == "deny":
+                self._append_audit_event(
+                    request=request,
+                    decision="deny",
+                    reason_code=policy_decision.reason_code,
+                )
                 response = ToolCallResponseV1(
                     request_id=request.request_id,
                     status="denied",
@@ -89,7 +97,19 @@ class ToolBrokerV1:
                             )
                             if consume_result.valid:
                                 approved = True
+                                self._append_audit_event(
+                                    request=request,
+                                    decision="allow",
+                                    reason_code="APPROVAL_TOKEN_ACCEPTED",
+                                    details={"approval_token": request.approval_token},
+                                )
                             else:
+                                self._append_audit_event(
+                                    request=request,
+                                    decision="deny",
+                                    reason_code=consume_result.reason_code or "POLICY_DENIED",
+                                    details={"approval_token": request.approval_token},
+                                )
                                 response = ToolCallResponseV1(
                                     request_id=request.request_id,
                                     status="denied",
@@ -108,6 +128,12 @@ class ToolBrokerV1:
                                 )
                                 return response
                         else:
+                            self._append_audit_event(
+                                request=request,
+                                decision="deny",
+                                reason_code=token_validation.reason_code or "POLICY_DENIED",
+                                details={"approval_token": request.approval_token},
+                            )
                             response = ToolCallResponseV1(
                                 request_id=request.request_id,
                                 status="denied",
@@ -128,6 +154,12 @@ class ToolBrokerV1:
                     else:
                         record = self._approval_gateway.request(request)
                         if record.status is ApprovalStatus.DENIED:
+                            self._append_audit_event(
+                                request=request,
+                                decision="deny",
+                                reason_code="APPROVAL_DENIED",
+                                details={"approval_id": record.approval_id},
+                            )
                             response = ToolCallResponseV1(
                                 request_id=request.request_id,
                                 status="denied",
@@ -145,6 +177,12 @@ class ToolBrokerV1:
                                 run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response
                             )
                             return response
+                        self._append_audit_event(
+                            request=request,
+                            decision="require_approval",
+                            reason_code=policy_decision.reason_code,
+                            details={"approval_id": record.approval_id},
+                        )
                         self._append_approval_requested_event(run_dir, request, approval_id=record.approval_id)
                         response = ToolCallResponseV1(
                             request_id=request.request_id,
@@ -164,6 +202,11 @@ class ToolBrokerV1:
                         )
                         return response
                 if not approved:
+                    self._append_audit_event(
+                        request=request,
+                        decision="require_approval",
+                        reason_code=policy_decision.reason_code,
+                    )
                     response = ToolCallResponseV1(
                         request_id=request.request_id,
                         status="approval_required",
@@ -179,6 +222,11 @@ class ToolBrokerV1:
 
         operation = self._tool_spec.operation_by_id(request.operation)
         if operation is None:
+            self._append_audit_event(
+                request=request,
+                decision="deny",
+                reason_code="INVALID_REQUEST",
+            )
             response = ToolCallResponseV1(
                 request_id=request.request_id,
                 status="error",
@@ -197,6 +245,11 @@ class ToolBrokerV1:
             allowed_capabilities=allowed_capabilities,
         )
         if capability_error is not None:
+            self._append_audit_event(
+                request=request,
+                decision="deny",
+                reason_code=capability_error.code,
+            )
             response = ToolCallResponseV1(
                 request_id=request.request_id,
                 status="denied",
@@ -211,6 +264,11 @@ class ToolBrokerV1:
             schema_name="input",
         )
         if schema_error is not None:
+            self._append_audit_event(
+                request=request,
+                decision="deny",
+                reason_code=schema_error.code,
+            )
             response = ToolCallResponseV1(
                 request_id=request.request_id,
                 status="error",
@@ -226,6 +284,11 @@ class ToolBrokerV1:
                 input_payload=request.input,
             )
             if constraint_decision.decision == "deny":
+                self._append_audit_event(
+                    request=request,
+                    decision="deny",
+                    reason_code=constraint_decision.reason_code,
+                )
                 response = ToolCallResponseV1(
                     request_id=request.request_id,
                     status="denied",
@@ -245,6 +308,11 @@ class ToolBrokerV1:
                 request_id=request.request_id,
             )
             if rate_limit_decision.decision == "deny":
+                self._append_audit_event(
+                    request=request,
+                    decision="deny",
+                    reason_code=rate_limit_decision.reason_code,
+                )
                 response = ToolCallResponseV1(
                     request_id=request.request_id,
                     status="denied",
@@ -259,6 +327,11 @@ class ToolBrokerV1:
                 return response
 
         response = self._invoke_with_retry(request=request, operation=operation)
+        self._append_audit_event(
+            request=request,
+            decision="allow" if response.status == "ok" else "deny",
+            reason_code="EXECUTED" if response.status == "ok" else (response.error.code if response.error else "UPSTREAM_ERROR"),
+        )
         self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
         return response
 
@@ -287,11 +360,14 @@ class ToolBrokerV1:
                 )
                 continue
             except Exception as exc:  # noqa: BLE001
-                last_error = ToolCallErrorV1(
-                    code="UPSTREAM_ERROR",
-                    message=str(exc),
-                    retryable=True,
-                )
+                mapped_error = map_connector_exception(exc)
+                if not mapped_error.retryable:
+                    return ToolCallResponseV1(
+                        request_id=request.request_id,
+                        status="denied" if mapped_error.code == "POLICY_DENIED" else "error",
+                        error=mapped_error,
+                    )
+                last_error = mapped_error
                 continue
 
             if not isinstance(connector_result, Mapping):
@@ -444,6 +520,7 @@ class ToolBrokerV1:
             "operation": request.operation,
             "capability": request.capability,
             "correlation_id": request.trace.correlation_id,
+            "input": redact_sensitive_data(request.input),
         }
         if request.trace.causation_id is not None:
             payload["causation_id"] = request.trace.causation_id
@@ -452,6 +529,7 @@ class ToolBrokerV1:
             if response.error is not None:
                 payload["error_code"] = response.error.code
                 payload["error_message"] = response.error.message
+                payload["error_details"] = redact_sensitive_data(response.error.details)
         event = create_run_event(
             run_id=request.run_id,
             event_type=event_type,
@@ -478,6 +556,29 @@ class ToolBrokerV1:
                 "operation": request.operation,
                 "capability": request.capability,
                 "correlation_id": request.trace.correlation_id,
+                "input": redact_sensitive_data(request.input),
             },
         )
         append_run_event(run_dir, event)
+
+    def _append_audit_event(
+        self,
+        *,
+        request: ToolCallRequestV1,
+        decision: str,
+        reason_code: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        event = create_audit_event(
+            actor=request.agent_id,
+            run_id=request.run_id,
+            request_id=request.request_id,
+            decision=decision,
+            reason_code=reason_code,
+            details=details
+            or {
+                "operation": request.operation,
+                "capability": request.capability,
+            },
+        )
+        append_audit_event(self._runs_root, event)

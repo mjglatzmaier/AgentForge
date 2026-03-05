@@ -9,6 +9,7 @@ from typing import Iterator
 from uuid import uuid4
 
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType, RunEventV1, RunEventsPageV1
+from agentforge.sidecar.core.redaction_v1 import redact_sensitive_data
 
 
 def create_run_event(
@@ -35,8 +36,9 @@ def append_run_event(run_dir: str | Path, event: RunEventV1) -> Path:
 
     log_path = _events_log_path(run_dir)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    redacted_event = event.model_copy(update={"payload": redact_sensitive_data(event.payload)})
     with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(event.model_dump_json() + "\n")
+        handle.write(redacted_event.model_dump_json() + "\n")
     return log_path
 
 
@@ -105,4 +107,3 @@ def _validate_unique_event_ids(events: list[RunEventV1]) -> None:
         if event.event_id in seen:
             raise ValueError(f"Duplicate run event_id detected: {event.event_id}")
         seen.add(event.event_id)
-

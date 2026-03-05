@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
+from agentforge.sidecar.agentd.broker.audit_store_v1 import load_audit_events
+from agentforge.sidecar.agentd.broker.error_mapper_v1 import map_connector_exception
 from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.broker.tool_broker_v1 import ToolBrokerV1
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
@@ -504,3 +506,87 @@ def test_tool_broker_enforces_rate_limit_then_allows_valid_path(tmp_path: Path) 
     assert third.error is not None
     assert third.error.code == "RATE_LIMIT_EXCEEDED"
     assert invoker.calls == 2
+
+
+def test_tool_broker_writes_audit_for_allow_deny_and_approval(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    approval_gateway = ApprovalGatewayV1(tmp_path / "runs")
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_audit_flow",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "trader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "approval_required_ops": ["exchange.get_ticker"],
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+        approval_gateway=approval_gateway,
+    )
+
+    denied = broker.dispatch(
+        _request().model_copy(update={"capability": "exchange.write", "request_id": "req_audit_deny"}),
+        allowed_capabilities=["exchange.write"],
+    )
+    assert denied.status == "denied"
+
+    approval_required = broker.dispatch(
+        _request().model_copy(update={"request_id": "req_audit_exec"}),
+        allowed_capabilities=["exchange.read"],
+    )
+    assert approval_required.status == "approval_required"
+    assert approval_required.error is not None
+    approval_id_obj = approval_required.error.details.get("approval_id")
+    assert isinstance(approval_id_obj, str)
+    approved = approval_gateway.approve(approval_id_obj)
+    assert approved.approval_token_id is not None
+
+    allowed = broker.dispatch(
+        _request().model_copy(
+            update={"request_id": "req_audit_exec", "approval_token": approved.approval_token_id}
+        ),
+        allowed_capabilities=["exchange.read"],
+    )
+    assert allowed.status == "ok"
+
+    decisions = {event.decision for event in load_audit_events(tmp_path / "runs")}
+    assert "deny" in decisions
+    assert "require_approval" in decisions
+    assert "allow" in decisions
+
+
+def test_tool_broker_redacts_sensitive_fields_in_persisted_events(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    broker = ToolBrokerV1(runs_root=tmp_path / "runs", tool_spec=_spec(), connector_invoker=invoker)
+    request = _request().model_copy(
+        update={
+            "request_id": "req_redact_1",
+            "input": {
+                "symbol": "BTC-USD",
+                "api_key": "plain-key",
+                "headers": {"authorization": "Bearer secret-token"},
+            },
+        }
+    )
+    response = broker.dispatch(request, allowed_capabilities=["exchange.read"])
+    assert response.status == "ok"
+
+    events = load_run_events(tmp_path / "runs" / "run_1")
+    request_event = next(event for event in events if event.event_type == RunEventType.TOOL_CALL_REQUESTED)
+    assert request_event.payload["input"]["api_key"] == "[REDACTED]"
+    assert request_event.payload["input"]["headers"]["authorization"] == "[REDACTED]"
+
+
+def test_error_mapper_produces_bounded_error_codes() -> None:
+    assert map_connector_exception(ValueError("bad input")).code == "INVALID_REQUEST"
+    assert map_connector_exception(PermissionError("blocked")).code == "POLICY_DENIED"
+    assert map_connector_exception(RuntimeError("upstream down")).code == "UPSTREAM_ERROR"

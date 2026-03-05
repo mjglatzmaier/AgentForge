@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agentforge.sidecar.agentctl.approvals_cli import approve, approvals_list, deny
 from agentforge.sidecar.agentd.api.approvals_api import approve_approval, deny_approval, get_approvals
+from agentforge.sidecar.agentd.broker.audit_store_v1 import load_audit_events
 from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
@@ -48,6 +49,9 @@ def test_approval_api_list_approve_and_deny(tmp_path: Path) -> None:
     denied = deny_approval(runs_root, second.approval_id)
     assert denied.status is ApprovalStatus.DENIED
     assert get_approvals(runs_root).approvals == []
+    decisions = {event.decision for event in load_audit_events(runs_root)}
+    assert "approved" in decisions
+    assert "denied" in decisions
 
 
 def test_approval_cli_helpers(tmp_path: Path) -> None:
