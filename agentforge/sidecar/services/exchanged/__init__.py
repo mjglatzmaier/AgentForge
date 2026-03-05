@@ -1,0 +1,2 @@
+"""Trading connector scaffold package."""
+
