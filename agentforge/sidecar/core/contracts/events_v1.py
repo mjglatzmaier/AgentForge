@@ -15,6 +15,10 @@ class RunEventType(str, Enum):
     STEP_STARTED = "StepStarted"
     TOOL_CALL_REQUESTED = "ToolCallRequested"
     APPROVAL_REQUESTED = "ApprovalRequested"
+    APPROVAL_TOKEN_ISSUED = "ApprovalTokenIssued"
+    APPROVAL_TOKEN_USED = "ApprovalTokenUsed"
+    APPROVAL_TOKEN_EXPIRED = "ApprovalTokenExpired"
+    APPROVAL_TOKEN_REJECTED = "ApprovalTokenRejected"
     TOOL_CALL_COMPLETED = "ToolCallCompleted"
     ARTIFACT_WRITTEN = "ArtifactWritten"
     STEP_COMPLETED = "StepCompleted"
@@ -49,4 +53,3 @@ class RunEventsPageV1(BaseModel):
 
     events: list[RunEventV1] = Field(default_factory=list)
     next_cursor: str | None = None
-

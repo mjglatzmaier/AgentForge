@@ -6,7 +6,6 @@ from typing import Any
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
 from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.broker.tool_broker_v1 import ToolBrokerV1
-from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
 from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolCallRequestV1,
@@ -209,10 +208,10 @@ def test_tool_broker_executes_after_explicit_approval(tmp_path: Path) -> None:
     assert isinstance(approval_id_obj, str)
     approval_id = approval_id_obj
     approved = approval_gateway.approve(approval_id)
-    assert approved.status is ApprovalStatus.APPROVED
+    assert approved.approval_token_id is not None
 
     second = broker.dispatch(
-        _request().model_copy(update={"approval_id": approval_id}),
+        _request().model_copy(update={"approval_token": approved.approval_token_id}),
         allowed_capabilities=["exchange.read"],
     )
     assert second.status == "ok"
@@ -220,3 +219,51 @@ def test_tool_broker_executes_after_explicit_approval(tmp_path: Path) -> None:
 
     events = load_run_events(tmp_path / "runs" / "run_1")
     assert RunEventType.APPROVAL_REQUESTED in {event.event_type for event in events}
+
+
+def test_tool_broker_rejects_reused_approval_token(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}, {"output": {"price": 101.5}}])
+    approval_gateway = ApprovalGatewayV1(tmp_path / "runs")
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_approval_reuse",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "trader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "approval_required_ops": ["exchange.get_ticker"],
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+        approval_gateway=approval_gateway,
+    )
+
+    first = broker.dispatch(_request(), allowed_capabilities=["exchange.read"])
+    assert first.status == "approval_required"
+    assert first.error is not None
+    approval_id_obj = first.error.details.get("approval_id")
+    assert isinstance(approval_id_obj, str)
+    approved = approval_gateway.approve(approval_id_obj)
+    assert approved.approval_token_id is not None
+
+    ok_response = broker.dispatch(
+        _request().model_copy(update={"approval_token": approved.approval_token_id}),
+        allowed_capabilities=["exchange.read"],
+    )
+    assert ok_response.status == "ok"
+
+    reused_response = broker.dispatch(
+        _request().model_copy(update={"approval_token": approved.approval_token_id}),
+        allowed_capabilities=["exchange.read"],
+    )
+    assert reused_response.status == "denied"
+    assert reused_response.error is not None
+    assert reused_response.error.code == "APPROVAL_TOKEN_USED"

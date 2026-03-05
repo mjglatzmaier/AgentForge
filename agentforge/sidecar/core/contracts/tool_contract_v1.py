@@ -21,10 +21,20 @@ class ToolCallRequestV1(BaseModel):
     capability: str
     operation: str
     approval_id: str | None = None
+    approval_token: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     trace: ToolCallTrace
 
-    @field_validator("request_id", "run_id", "node_id", "agent_id", "capability", "operation", "approval_id")
+    @field_validator(
+        "request_id",
+        "run_id",
+        "node_id",
+        "agent_id",
+        "capability",
+        "operation",
+        "approval_id",
+        "approval_token",
+    )
     @classmethod
     def validate_non_empty_optional_strings(cls, value: str | None) -> str | None:
         if value is None:

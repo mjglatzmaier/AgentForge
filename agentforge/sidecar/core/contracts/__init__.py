@@ -4,6 +4,9 @@ from agentforge.sidecar.core.contracts.events_v1 import RunEventType, RunEventV1
 from agentforge.sidecar.core.contracts.approval_v1 import (
     ApprovalListV1,
     ApprovalRecordV1,
+    ApprovalTokenStatus,
+    ApprovalTokenValidationV1,
+    ApprovalTokenV1,
     ApprovalStatus,
 )
 from agentforge.sidecar.core.contracts.tool_contract_v1 import (
@@ -18,6 +21,9 @@ from agentforge.sidecar.core.contracts.tool_contract_v1 import (
 __all__ = [
     "ApprovalListV1",
     "ApprovalRecordV1",
+    "ApprovalTokenStatus",
+    "ApprovalTokenValidationV1",
+    "ApprovalTokenV1",
     "ApprovalStatus",
     "RunEventType",
     "RunEventV1",

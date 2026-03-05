@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from agentforge.sidecar.agentctl.approvals_cli import approve, approvals_list, deny
 from agentforge.sidecar.agentd.api.approvals_api import approve_approval, deny_approval, get_approvals
+from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
+from agentforge.sidecar.core.contracts.events_v1 import RunEventType
 from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.tool_contract_v1 import ToolCallRequestV1
 
@@ -56,3 +59,64 @@ def test_approval_cli_helpers(tmp_path: Path) -> None:
 
     another = gateway.request(_request().model_copy(update={"request_id": "req_approval_3"}))
     assert deny(runs_root, another.approval_id).status is ApprovalStatus.DENIED
+
+
+class _Clock:
+    def __init__(self, start: datetime) -> None:
+        self.current = start
+
+    def now(self) -> datetime:
+        return self.current
+
+    def advance(self, seconds: int) -> None:
+        self.current = self.current + timedelta(seconds=seconds)
+
+
+def test_approval_token_is_accepted_then_single_use(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    clock = _Clock(datetime(2025, 1, 1, tzinfo=timezone.utc))
+    gateway = ApprovalGatewayV1(runs_root, token_ttl_seconds=30, now_provider=clock.now)
+    request = _request()
+    approval = gateway.approve(gateway.request(request).approval_id)
+    assert approval.approval_token_id is not None
+
+    token_validation = gateway.validate_token(approval.approval_token_id, request)
+    assert token_validation.valid is True
+    consumed = gateway.consume_token(approval.approval_token_id, request)
+    assert consumed.valid is True
+
+    reused = gateway.validate_token(approval.approval_token_id, request)
+    assert reused.valid is False
+    assert reused.reason_code == "APPROVAL_TOKEN_USED"
+
+
+def test_approval_token_rejected_after_ttl(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    clock = _Clock(datetime(2025, 1, 1, tzinfo=timezone.utc))
+    gateway = ApprovalGatewayV1(runs_root, token_ttl_seconds=5, now_provider=clock.now)
+    request = _request()
+    approval = gateway.approve(gateway.request(request).approval_id)
+    assert approval.approval_token_id is not None
+
+    clock.advance(6)
+    expired = gateway.validate_token(approval.approval_token_id, request)
+    assert expired.valid is False
+    assert expired.reason_code == "APPROVAL_TOKEN_EXPIRED"
+
+
+def test_approval_token_rejected_on_context_mismatch_and_logs_event(tmp_path: Path) -> None:
+    runs_root = tmp_path / "runs"
+    clock = _Clock(datetime(2025, 1, 1, tzinfo=timezone.utc))
+    gateway = ApprovalGatewayV1(runs_root, token_ttl_seconds=30, now_provider=clock.now)
+    request = _request()
+    approval = gateway.approve(gateway.request(request).approval_id)
+    assert approval.approval_token_id is not None
+
+    mismatch_request = request.model_copy(update={"node_id": "node_other"})
+    mismatch = gateway.validate_token(approval.approval_token_id, mismatch_request)
+    assert mismatch.valid is False
+    assert mismatch.reason_code == "APPROVAL_TOKEN_CONTEXT_MISMATCH"
+
+    event_types = [event.event_type for event in load_run_events(runs_root / request.run_id)]
+    assert RunEventType.APPROVAL_TOKEN_ISSUED in event_types
+    assert RunEventType.APPROVAL_TOKEN_REJECTED in event_types

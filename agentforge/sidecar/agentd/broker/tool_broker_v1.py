@@ -77,19 +77,48 @@ class ToolBrokerV1:
             if policy_decision.decision == "require_approval":
                 approved = False
                 if self._approval_gateway is not None:
-                    if request.approval_id is not None:
-                        record = self._approval_gateway.get(request.approval_id)
-                        if record is not None and record.status is ApprovalStatus.APPROVED:
-                            approved = True
-                        elif record is not None and record.status is ApprovalStatus.DENIED:
+                    if request.approval_token is not None:
+                        token_validation = self._approval_gateway.validate_token(
+                            token_id=request.approval_token,
+                            request=request,
+                        )
+                        if token_validation.valid:
+                            consume_result = self._approval_gateway.consume_token(
+                                token_id=request.approval_token,
+                                request=request,
+                            )
+                            if consume_result.valid:
+                                approved = True
+                            else:
+                                response = ToolCallResponseV1(
+                                    request_id=request.request_id,
+                                    status="denied",
+                                    error=ToolCallErrorV1(
+                                        code=consume_result.reason_code or "POLICY_DENIED",
+                                        message="Approval token was rejected.",
+                                        retryable=False,
+                                        details={
+                                            "approval_token": request.approval_token,
+                                            "policy_snapshot_id": policy_decision.policy_snapshot_id,
+                                        },
+                                    ),
+                                )
+                                self._append_lifecycle_event(
+                                    run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response
+                                )
+                                return response
+                        else:
                             response = ToolCallResponseV1(
                                 request_id=request.request_id,
                                 status="denied",
                                 error=ToolCallErrorV1(
-                                    code="POLICY_DENIED",
-                                    message="Approval decision is denied.",
+                                    code=token_validation.reason_code or "POLICY_DENIED",
+                                    message="Approval token was rejected.",
                                     retryable=False,
-                                    details={"approval_id": record.approval_id},
+                                    details={
+                                        "approval_token": request.approval_token,
+                                        "policy_snapshot_id": policy_decision.policy_snapshot_id,
+                                    },
                                 ),
                             )
                             self._append_lifecycle_event(
@@ -98,6 +127,24 @@ class ToolBrokerV1:
                             return response
                     else:
                         record = self._approval_gateway.request(request)
+                        if record.status is ApprovalStatus.DENIED:
+                            response = ToolCallResponseV1(
+                                request_id=request.request_id,
+                                status="denied",
+                                error=ToolCallErrorV1(
+                                    code="POLICY_DENIED",
+                                    message="Approval decision is denied.",
+                                    retryable=False,
+                                    details={
+                                        "approval_id": record.approval_id,
+                                        "policy_snapshot_id": policy_decision.policy_snapshot_id,
+                                    },
+                                ),
+                            )
+                            self._append_lifecycle_event(
+                                run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response
+                            )
+                            return response
                         self._append_approval_requested_event(run_dir, request, approval_id=record.approval_id)
                         response = ToolCallResponseV1(
                             request_id=request.request_id,

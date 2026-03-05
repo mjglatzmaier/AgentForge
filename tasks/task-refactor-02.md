@@ -36,3 +36,11 @@ Enforce security-first execution by making policy decisions and approvals mandat
 - Approval-required operations cannot execute without valid approval token.
 - Connector calls do not expose secrets in kernel logs/events.
 - Policy outcomes are reproducible from policy snapshot + request input.
+
+## Follow-on Breakdown (recommended)
+
+Use these smaller tasks to reduce implementation friction and isolate risk:
+
+- `tasks/task-refactor-05.md` — approval token TTL + single-use hardening.
+- `tasks/task-refactor-06.md` — operation constraints + rate-limit enforcement.
+- `tasks/task-refactor-07.md` — audit logging, secret redaction, bounded error taxonomy.
