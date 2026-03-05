@@ -20,8 +20,19 @@ class ToolCallRequestV1(BaseModel):
     agent_id: str
     capability: str
     operation: str
+    approval_id: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     trace: ToolCallTrace
+
+    @field_validator("request_id", "run_id", "node_id", "agent_id", "capability", "operation", "approval_id")
+    @classmethod
+    def validate_non_empty_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ToolCallRequestV1 string fields must be non-empty when provided.")
+        return normalized
 
 
 class ToolCallErrorV1(BaseModel):

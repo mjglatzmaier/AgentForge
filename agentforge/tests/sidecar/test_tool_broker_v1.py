@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agentforge.sidecar.agentd.approvals.store_v1 import ApprovalGatewayV1
 from agentforge.sidecar.agentd.broker.events_store import load_run_events
 from agentforge.sidecar.agentd.broker.tool_broker_v1 import ToolBrokerV1
+from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
 from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolCallRequestV1,
@@ -144,6 +146,7 @@ def test_tool_broker_enforces_policy_denial_before_invocation(tmp_path: Path) ->
 
 def test_tool_broker_returns_approval_required_when_policy_demands_it(tmp_path: Path) -> None:
     invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    approval_gateway = ApprovalGatewayV1(tmp_path / "runs")
     policy = PolicyConfigV1.model_validate(
         {
             "policy_version": 1,
@@ -163,10 +166,57 @@ def test_tool_broker_returns_approval_required_when_policy_demands_it(tmp_path: 
         tool_spec=_spec(),
         connector_invoker=invoker,
         policy_engine=PolicyEngineV1(policy),
+        approval_gateway=approval_gateway,
     )
 
-    response = broker.dispatch(_request())
+    response = broker.dispatch(_request(), allowed_capabilities=["exchange.read"])
     assert response.status == "approval_required"
     assert response.error is not None
     assert response.error.code == "APPROVAL_REQUIRED"
+    assert response.error.details["approval_id"].startswith("apr-")
     assert invoker.calls == 0
+
+
+def test_tool_broker_executes_after_explicit_approval(tmp_path: Path) -> None:
+    invoker = _FakeInvoker([{"output": {"price": 101.5}}])
+    approval_gateway = ApprovalGatewayV1(tmp_path / "runs")
+    policy = PolicyConfigV1.model_validate(
+        {
+            "policy_version": 1,
+            "policy_snapshot_id": "pol_approval_exec",
+            "defaults": {"deny_by_default": True},
+            "agents": {
+                "agent_1": {
+                    "role": "trader",
+                    "allowed_capabilities": ["exchange.read"],
+                    "approval_required_ops": ["exchange.get_ticker"],
+                }
+            },
+        }
+    )
+    broker = ToolBrokerV1(
+        runs_root=tmp_path / "runs",
+        tool_spec=_spec(),
+        connector_invoker=invoker,
+        policy_engine=PolicyEngineV1(policy),
+        approval_gateway=approval_gateway,
+    )
+
+    first = broker.dispatch(_request(), allowed_capabilities=["exchange.read"])
+    assert first.status == "approval_required"
+    assert first.error is not None
+    approval_id_obj = first.error.details.get("approval_id")
+    assert isinstance(approval_id_obj, str)
+    approval_id = approval_id_obj
+    approved = approval_gateway.approve(approval_id)
+    assert approved.status is ApprovalStatus.APPROVED
+
+    second = broker.dispatch(
+        _request().model_copy(update={"approval_id": approval_id}),
+        allowed_capabilities=["exchange.read"],
+    )
+    assert second.status == "ok"
+    assert invoker.calls == 1
+
+    events = load_run_events(tmp_path / "runs" / "run_1")
+    assert RunEventType.APPROVAL_REQUESTED in {event.event_type for event in events}

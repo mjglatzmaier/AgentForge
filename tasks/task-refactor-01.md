@@ -73,12 +73,12 @@ policy.md
 ---
 
 ## 0.4 Approval Flow v1 (hard gates)
-- [ ] Kernel emits `ApprovalRequested` with stable `approval_id`
-- [ ] API endpoints:
+- [X] Kernel emits `ApprovalRequested` with stable `approval_id`
+- [X] API endpoints:
   - `GET /approvals` (pending)
   - `POST /approvals/{approval_id}:approve`
   - `POST /approvals/{approval_id}:deny`
-- [ ] CLI UX:
+- [X] CLI UX:
   - `agentctl approvals list`
   - `agentctl approve <id>` / `deny <id>`
 

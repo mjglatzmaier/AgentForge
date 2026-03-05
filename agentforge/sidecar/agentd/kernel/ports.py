@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from agentforge.sidecar.core.contracts.approval_v1 import ApprovalRecordV1
 from agentforge.sidecar.core.policy.decision import PolicyDecisionResult
 
 class PolicyEngine(Protocol):
@@ -15,7 +16,9 @@ class PolicyEngine(Protocol):
 class ApprovalGateway(Protocol):
     """Resolves approval decisions for gated operations."""
 
-    def require(self, request: dict[str, Any]) -> str: ...
+    def request(self, request: Any) -> ApprovalRecordV1: ...
+
+    def get(self, approval_id: str) -> ApprovalRecordV1 | None: ...
 
 
 class BrokerClient(Protocol):

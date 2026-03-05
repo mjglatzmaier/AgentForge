@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from agentforge.sidecar.agentd.broker.events_store import append_run_event, create_run_event
+from agentforge.sidecar.core.contracts.approval_v1 import ApprovalStatus
 from agentforge.sidecar.core.contracts.events_v1 import RunEventType
 from agentforge.sidecar.core.contracts.tool_contract_v1 import (
     ToolCallErrorV1,
@@ -37,11 +38,13 @@ class ToolBrokerV1:
         tool_spec: ToolSpecV1,
         connector_invoker: Any,
         policy_engine: PolicyEngineV1 | None = None,
+        approval_gateway: Any | None = None,
     ) -> None:
         self._runs_root = Path(runs_root)
         self._tool_spec = tool_spec
         self._connector_invoker = connector_invoker
         self._policy_engine = policy_engine
+        self._approval_gateway = approval_gateway
 
     def dispatch(
         self,
@@ -72,18 +75,60 @@ class ToolBrokerV1:
                 self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
                 return response
             if policy_decision.decision == "require_approval":
-                response = ToolCallResponseV1(
-                    request_id=request.request_id,
-                    status="approval_required",
-                    error=ToolCallErrorV1(
-                        code="APPROVAL_REQUIRED",
-                        message=f"Approval required by policy ({policy_decision.reason_code}).",
-                        retryable=False,
-                        details={"policy_snapshot_id": policy_decision.policy_snapshot_id},
-                    ),
-                )
-                self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
-                return response
+                approved = False
+                if self._approval_gateway is not None:
+                    if request.approval_id is not None:
+                        record = self._approval_gateway.get(request.approval_id)
+                        if record is not None and record.status is ApprovalStatus.APPROVED:
+                            approved = True
+                        elif record is not None and record.status is ApprovalStatus.DENIED:
+                            response = ToolCallResponseV1(
+                                request_id=request.request_id,
+                                status="denied",
+                                error=ToolCallErrorV1(
+                                    code="POLICY_DENIED",
+                                    message="Approval decision is denied.",
+                                    retryable=False,
+                                    details={"approval_id": record.approval_id},
+                                ),
+                            )
+                            self._append_lifecycle_event(
+                                run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response
+                            )
+                            return response
+                    else:
+                        record = self._approval_gateway.request(request)
+                        self._append_approval_requested_event(run_dir, request, approval_id=record.approval_id)
+                        response = ToolCallResponseV1(
+                            request_id=request.request_id,
+                            status="approval_required",
+                            error=ToolCallErrorV1(
+                                code="APPROVAL_REQUIRED",
+                                message=f"Approval required by policy ({policy_decision.reason_code}).",
+                                retryable=False,
+                                details={
+                                    "policy_snapshot_id": policy_decision.policy_snapshot_id,
+                                    "approval_id": record.approval_id,
+                                },
+                            ),
+                        )
+                        self._append_lifecycle_event(
+                            run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response
+                        )
+                        return response
+                if not approved:
+                    response = ToolCallResponseV1(
+                        request_id=request.request_id,
+                        status="approval_required",
+                        error=ToolCallErrorV1(
+                            code="APPROVAL_REQUIRED",
+                            message=f"Approval required by policy ({policy_decision.reason_code}).",
+                            retryable=False,
+                            details={"policy_snapshot_id": policy_decision.policy_snapshot_id},
+                        ),
+                    )
+                    self._append_lifecycle_event(run_dir, request, RunEventType.TOOL_CALL_COMPLETED, response)
+                    return response
 
         operation = self._tool_spec.operation_by_id(request.operation)
         if operation is None:
@@ -326,5 +371,27 @@ class ToolBrokerV1:
             event_type=event_type,
             step_id=request.node_id,
             payload=payload,
+        )
+        append_run_event(run_dir, event)
+
+    def _append_approval_requested_event(
+        self,
+        run_dir: Path,
+        request: ToolCallRequestV1,
+        *,
+        approval_id: str,
+    ) -> None:
+        event = create_run_event(
+            run_id=request.run_id,
+            event_type=RunEventType.APPROVAL_REQUESTED,
+            step_id=request.node_id,
+            payload={
+                "approval_id": approval_id,
+                "request_id": request.request_id,
+                "agent_id": request.agent_id,
+                "operation": request.operation,
+                "capability": request.capability,
+                "correlation_id": request.trace.correlation_id,
+            },
         )
         append_run_event(run_dir, event)
