@@ -103,12 +103,12 @@ policy.md
 ---
 
 ## 0.6 Trading connector service (exchanged) — risk-limited execution
-- [ ] Store API keys in OS keychain
-- [ ] Tool ops:
+- [X] Store API keys in OS keychain
+- [X] Tool ops:
   - `get_balances`
   - `get_positions`
   - `place_order` (approval-required)
-- [ ] Hard risk controls inside connector:
+- [X] Hard risk controls inside connector:
   - max notional per order
   - allowlisted symbols
   - max orders per day
