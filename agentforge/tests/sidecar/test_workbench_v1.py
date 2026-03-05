@@ -13,6 +13,8 @@ from agentforge.sidecar.workbench import (
     build_approval_modal,
     build_artifact_viewer,
     build_event_timeline,
+    build_run_detail_panel,
+    build_run_graph_panel,
     build_runs_panel,
 )
 
@@ -22,8 +24,32 @@ def test_runs_panel_and_timeline_projection(tmp_path: Path) -> None:
     run_dir = runs_root / "run_a"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "control").mkdir(parents=True, exist_ok=True)
+    (run_dir / "control" / "plan.json").write_text(
+        json.dumps(
+            {
+                "plan_id": "plan_a",
+                "nodes": [
+                    {
+                        "node_id": "fetch",
+                        "agent_id": "agent.fetch",
+                        "operation": "fetch_and_snapshot",
+                        "depends_on": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     (run_dir / "control" / "snapshot.json").write_text(
-        json.dumps({"summary": {"succeeded": 1, "pending": 0}}), encoding="utf-8"
+        json.dumps(
+            {
+                "plan_id": "plan_a",
+                "last_event_id": "evt_terminal",
+                "summary": {"succeeded": 1, "pending": 0},
+                "node_states": {"fetch": "succeeded"},
+            }
+        ),
+        encoding="utf-8",
     )
     append_run_event(
         run_dir,
@@ -35,7 +61,16 @@ def test_runs_panel_and_timeline_projection(tmp_path: Path) -> None:
     assert runs_panel.runs[0]["status"] in {"completed", "succeeded"}
 
     timeline = build_event_timeline(runs_root, run_id="run_a")
-    assert timeline.events[0].event_type is RunEventType.RUN_STARTED
+    assert timeline.events[0].event_type == RunEventType.RUN_STARTED.value
+
+    detail = build_run_detail_panel(runs_root, run_id="run_a")
+    assert detail.status in {"completed", "succeeded"}
+    assert detail.plan_id == "plan_a"
+    assert detail.node_states["fetch"] == "succeeded"
+
+    graph = build_run_graph_panel(runs_root, run_id="run_a")
+    assert graph.nodes[0]["node_id"] == "fetch"
+    assert graph.nodes[0]["state"] == "succeeded"
 
 
 def test_approval_modal_projection(tmp_path: Path) -> None:

@@ -8,10 +8,9 @@ from pydantic import BaseModel, Field
 
 from agentforge.sidecar.agentd.api.approvals_api import get_approvals
 from agentforge.sidecar.agentd.api.artifacts_api import get_run_artifacts
-from agentforge.sidecar.agentd.api.events_api import get_run_events
-from agentforge.sidecar.agentd.api.runs_api import get_runs
+from agentforge.sidecar.agentd.api.events_api import TimelineEventV1, get_run_timeline
+from agentforge.sidecar.agentd.api.runs_api import get_run, get_run_graph, get_runs
 from agentforge.sidecar.core.contracts.approval_v1 import ApprovalRecordV1
-from agentforge.sidecar.core.contracts.events_v1 import RunEventV1
 
 
 class RunsPanelModelV1(BaseModel):
@@ -20,7 +19,7 @@ class RunsPanelModelV1(BaseModel):
 
 class EventTimelineModelV1(BaseModel):
     run_id: str
-    events: list[RunEventV1] = Field(default_factory=list)
+    events: list[TimelineEventV1] = Field(default_factory=list)
     next_cursor: str | None = None
 
 
@@ -31,6 +30,20 @@ class ApprovalModalModelV1(BaseModel):
 class ArtifactViewerModelV1(BaseModel):
     run_id: str
     artifacts: list[dict[str, str]] = Field(default_factory=list)
+
+
+class RunDetailPanelModelV1(BaseModel):
+    run_id: str
+    status: str
+    plan_id: str | None = None
+    last_event_id: str | None = None
+    summary: dict[str, int] = Field(default_factory=dict)
+    node_states: dict[str, str] = Field(default_factory=dict)
+
+
+class RunGraphPanelModelV1(BaseModel):
+    run_id: str
+    nodes: list[dict[str, object]] = Field(default_factory=list)
 
 
 def build_runs_panel(runs_root: str | Path) -> RunsPanelModelV1:
@@ -47,7 +60,7 @@ def build_event_timeline(
     after: str | None = None,
     limit: int = 200,
 ) -> EventTimelineModelV1:
-    page = get_run_events(runs_root, run_id=run_id, after=after, limit=limit)
+    page = get_run_timeline(runs_root, run_id=run_id, after=after, limit=limit)
     return EventTimelineModelV1(run_id=run_id, events=page.events, next_cursor=page.next_cursor)
 
 
@@ -71,3 +84,31 @@ def build_artifact_viewer(runs_root: str | Path, *, run_id: str) -> ArtifactView
         ],
     )
 
+
+def build_run_detail_panel(runs_root: str | Path, *, run_id: str) -> RunDetailPanelModelV1:
+    detail = get_run(runs_root, run_id=run_id)
+    return RunDetailPanelModelV1(
+        run_id=detail.run_id,
+        status=detail.status,
+        plan_id=detail.plan_id,
+        last_event_id=detail.last_event_id,
+        summary=detail.summary,
+        node_states=detail.node_states,
+    )
+
+
+def build_run_graph_panel(runs_root: str | Path, *, run_id: str) -> RunGraphPanelModelV1:
+    graph = get_run_graph(runs_root, run_id=run_id)
+    return RunGraphPanelModelV1(
+        run_id=graph.run_id,
+        nodes=[
+            {
+                "node_id": node.node_id,
+                "agent_id": node.agent_id,
+                "operation": node.operation,
+                "state": node.state,
+                "depends_on": list(node.depends_on),
+            }
+            for node in graph.nodes
+        ],
+    )
